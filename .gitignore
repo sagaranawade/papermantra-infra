@@ -1,0 +1,19 @@
+# Local secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Certbot live data (generated on the VPS)
+certbot/conf/
+certbot/www/
+
+# Deployment state on server
+.deploy-history
+.deploy-lock
+backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

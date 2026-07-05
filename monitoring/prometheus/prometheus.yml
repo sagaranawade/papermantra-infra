@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: papermantra-api
+    metrics_path: /papermantra/actuator/prometheus
+    static_configs:
+      - targets: ["api:9091"]
+        labels:
+          service: papermantraservices
+
+  - job_name: papermantra-pdf
+    metrics_path: /pdfgenerator/actuator/prometheus
+    static_configs:
+      - targets: ["pdf:9092"]
+        labels:
+          service: pdfgenerator
+
+  - job_name: nginx
+    static_configs:
+      - targets: ["nginx:80"]
+        labels:
+          service: nginx

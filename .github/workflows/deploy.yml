@@ -1,0 +1,134 @@
+# =============================================================================
+# Deploy papermantra-infra to the production VPS.
+#
+# Triggered by:
+#   • push to main (infra config changes)
+#   • workflow_dispatch (manual redeploy)
+#   • repository_dispatch from app repos (optional image tag bump)
+#
+# Required GitHub Secrets:
+#   PROD_SSH_HOST, PROD_SSH_USER, PROD_SSH_KEY
+#   GHCR_TOKEN (read packages — PAT or fine-grained token)
+#
+# Optional repository variables:
+#   INFRA_DEPLOY_PATH  default: /opt/papermantra-infra
+# =============================================================================
+
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose*.yml'
+      - 'nginx/**'
+      - 'certbot/**'
+      - 'scripts/**'
+      - 'monitoring/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Optional tag suffix to pin all services (e.g. v1.2.3)'
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [deploy-infra]
+
+concurrency:
+  group: papermantra-infra-deploy
+  cancel-in-progress: false
+
+env:
+  DEPLOY_PATH: ${{ vars.INFRA_DEPLOY_PATH || '/opt/papermantra-infra' }}
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://papermantra.com
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          timeout: 300s
+          envs: GHCR_PAT,GHCR_USER
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+            PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || '' }}"
+            SOURCE="${{ github.event.client_payload.source || 'manual' }}"
+
+            if [[ ! -d "${DEPLOY_PATH}" ]]; then
+              echo "Cloning infra repo to ${DEPLOY_PATH}..."
+              sudo mkdir -p "$(dirname "${DEPLOY_PATH}")"
+              sudo git clone https://github.com/${{ github.repository }}.git "${DEPLOY_PATH}"
+              sudo chown -R "$(whoami):$(whoami)" "${DEPLOY_PATH}"
+            fi
+
+            cd "${DEPLOY_PATH}"
+            git fetch origin main
+            git reset --hard origin/main
+
+            if [[ ! -f .env ]]; then
+              echo "ERROR: ${DEPLOY_PATH}/.env is missing. Create it from .env.example on the server."
+              exit 1
+            fi
+
+            if [[ -n "${PIN_TAG}" ]]; then
+              echo "Pinning all IMAGE_* tags to :${PIN_TAG}"
+              sed -i "s|:latest|:${PIN_TAG}|g" .env
+            fi
+
+            if [[ -n "${GHCR_PAT:-}" ]]; then
+              echo "${GHCR_PAT}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            else
+              echo "WARN: GHCR_TOKEN secret not set — assuming docker login already configured on VPS"
+            fi
+
+            chmod +x scripts/*.sh certbot/*.sh
+            echo "Deploy triggered by: ${SOURCE}"
+            ./scripts/deploy.sh --rollback-on-failure
+
+      - name: Smoke tests
+        run: |
+          set -euo pipefail
+          urls=(
+            "https://papermantra.com/healthz"
+            "https://www.neelmind.com/"
+            "https://api.papermantra.com/papermantra/actuator/health"
+            "https://pdf.papermantra.com/pdfgenerator/actuator/health"
+          )
+          for url in "${urls[@]}"; do
+            echo "Checking ${url}..."
+            for i in 1 2 3 4 5 6; do
+              if curl -fsS "${url}" >/dev/null; then
+                echo "  OK"
+                break
+              fi
+              if [[ "${i}" -eq 6 ]]; then
+                echo "  FAILED after 6 attempts"
+                exit 1
+              fi
+              sleep 15
+            done
+          done
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Infra deployment failed for commit ${{ github.sha }}"
+          echo "Check VPS logs: docker compose -f ${{ env.DEPLOY_PATH }}/docker-compose.yml logs --tail=100"

@@ -1,0 +1,225 @@
+# =============================================================================
+# papermantra-infra — production stack
+#
+# Usage on VPS:
+#   cp .env.example .env && nano .env
+#   docker compose pull
+#   docker compose up -d
+#
+# Optional monitoring overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# =============================================================================
+
+name: papermantra
+
+services:
+
+  # ── Reverse proxy + TLS termination ─────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: papermantra-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: papermantra-certbot
+    profiles: ["certbot"]
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: /bin/sh
+    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    networks:
+      - frontend
+
+  # ── React portal (CRA + nginx) ────────────────────────────────────────────────
+  portal:
+    image: ${IMAGE_PAPERMANTRA}
+    container_name: papermantra-portal
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ── Robofume marketing site (Next.js standalone) ──────────────────────────────
+  website:
+    image: ${IMAGE_ROBOFUME}
+    container_name: robofume-website
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  # ── Papermantra Services API (Spring Boot) ────────────────────────────────────
+  api:
+    image: ${IMAGE_SERVICES}
+    container_name: papermantra-api
+    restart: unless-stopped
+    expose:
+      - "9091"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MONGODB_URI: ${MONGODB_URI}
+      MONGODB_DATABASE: ${MONGODB_DATABASE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_GEN_CLIENT_ID: ${GOOGLE_GEN_CLIENT_ID}
+      GOOGLE_GEN_CLIENT_SECRET: ${GOOGLE_GEN_CLIENT_SECRET}
+      GOOGLE_GEN_REDIRECT_URI: ${GOOGLE_GEN_REDIRECT_URI}
+      GOOGLE_GEN_JS_ORIGINS: ${GOOGLE_GEN_JS_ORIGINS}
+    volumes:
+      - api_logs:/var/log/papermantra
+      - api_user_pics:/workspace/userPic
+      - api_question_images:/workspace/images
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/papermantra/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
+  # ── PDF Generator (Spring Boot) ─────────────────────────────────────────────
+  pdf:
+    image: ${IMAGE_PDF}
+    container_name: papermantra-pdf
+    restart: unless-stopped
+    expose:
+      - "9092"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MONGODB_URI: ${PDF_MONGODB_URI}
+      MONGODB_DATABASE: ${PDF_MONGODB_DATABASE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      AUTH_BASE_URL: ${AUTH_BASE_URL}
+      AUTH_USERNAME: ${AUTH_USERNAME}
+      AUTH_PASSWORD: ${AUTH_PASSWORD}
+      QP_BASE_URL: ${QP_BASE_URL}
+      PDF_BASE_URL: ${PDF_BASE_URL}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      CORS_ALLOWED_PATTERNS: ${CORS_ALLOWED_PATTERNS}
+    volumes:
+      - pdf_logs:/var/log/pdfgenerator
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9092/pdfgenerator/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
+  # ── MongoDB ───────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: papermantra-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "-u", "${MONGO_ROOT_USER}", "-p", "${MONGO_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: papermantra-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD}
+        --appendonly yes
+        --save 900 1
+        --save 300 10
+        --save 60 10000
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  mongo_config:
+  redis_data:
+  api_logs:
+  api_user_pics:
+  api_question_images:
+  pdf_logs:
