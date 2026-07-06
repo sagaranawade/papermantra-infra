@@ -12,6 +12,10 @@ certbot/www/
 backups/
 .sync-staging/
 
+# Question image staging (upload via WinSCP; sync with scripts/sync-question-images.sh)
+images/*
+!images/.gitkeep
+
 # Local sync config (machine-specific paths)
 scripts/sync-data.config
 

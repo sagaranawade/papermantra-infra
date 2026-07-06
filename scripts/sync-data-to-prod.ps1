@@ -23,7 +23,7 @@ $InfraRoot = Split-Path -Parent $ScriptDir
 $ConfigFile = Join-Path $ScriptDir 'sync-data.config'
 
 if (-not (Test-Path $ConfigFile)) {
-    Write-Error "Missing $ConfigFile — copy scripts/sync-data.config.example to scripts/sync-data.config"
+    Write-Error "Missing $ConfigFile - copy scripts/sync-data.config.example to scripts/sync-data.config"
 }
 
 $config = @{}
@@ -95,14 +95,16 @@ if (-not $SkipImages) {
         @{ Name = 'pdf-images'; Path = $pdfImages }
     )) {
         if (-not (Test-Path $pair.Path)) {
-            Write-Warning "Missing $($pair.Path) — skipping $($pair.Name)"
+            Write-Warning "Missing $($pair.Path), skipping $($pair.Name)"
             continue
         }
         $dest = Join-Path $StagingLocal $pair.Name
         Write-Host ">> Copying $($pair.Name) from $($pair.Path)"
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
-        robocopy $pair.Path $dest /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $($pair.Name) with exit $LASTEXITCODE" }
+        & robocopy $pair.Path $dest /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy failed for $($pair.Name) with exit $LASTEXITCODE"
+        }
     }
 }
 
