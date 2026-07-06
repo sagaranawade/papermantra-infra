@@ -107,3 +107,7 @@ ssh @SshArgs $Remote "cd '${VpsPath}' && git pull origin main && chmod +x script
 
 Write-Host ">> Sync complete."
 Write-Host "   Staging left at: $StagingLocal (delete manually when done)"
+Write-Host ""
+Write-Host "NOTE: MongoDB sync does NOT copy branding image files."
+Write-Host "      Run: .\scripts\branding-sync.ps1 -Deploy"
+Write-Host "      to sync papermantraservices\user-uploads to production."

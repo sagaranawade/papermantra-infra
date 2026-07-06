@@ -1,5 +1,5 @@
 # Copy to sync-data.config and edit paths for your machine.
-# Used by sync-data-to-prod, image-sync, and image-replace scripts.
+# Used by sync-data-to-prod, image-sync, image-replace, and branding-sync scripts.
 
 PAPERMANTRA_SERVICES_ROOT=D:/PaperMantra Projects/Git Hub New Repos/papermantraservices
 PDFGENERATOR_ROOT=D:/PaperMantra Projects/Git Hub New Repos/pdfgenerator

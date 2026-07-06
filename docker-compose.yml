@@ -108,9 +108,12 @@ services:
       GOOGLE_GEN_JS_ORIGINS: ${GOOGLE_GEN_JS_ORIGINS}
       QUESTIONS_IMAGES_DIR: /app/images
       FILE_UPLOAD_DIR: /app/userPic
+      BRANDING_UPLOAD_BASE: /app/user-uploads
+      BRANDING_UPLOAD_DIR: /app/user-uploads/branding
     volumes:
       - api_logs:/var/log/papermantra
       - api_user_pics:/app/userPic
+      - api_user_uploads:/app/user-uploads
       - question_images:/app/images
     depends_on:
       mongodb:
@@ -241,6 +244,7 @@ volumes:
   redis_data:
   api_logs:
   api_user_pics:
+  api_user_uploads:
   question_images:
     external: true
     name: papermantra_question_images
