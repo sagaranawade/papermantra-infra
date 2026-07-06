@@ -1,5 +1,8 @@
 # Copy to sync-data.config and edit paths for your machine.
-# Used by sync-data-to-prod.ps1 (Windows) and sync-data-to-prod.sh (bash).
+# Used by sync-data-to-prod, image-sync, and image-replace scripts.
+
+PAPERMANTRA_SERVICES_ROOT=D:/PaperMantra Projects/Git Hub New Repos/papermantraservices
+PDFGENERATOR_ROOT=D:/PaperMantra Projects/Git Hub New Repos/pdfgenerator
 
 VPS_HOST=187.127.189.114
 VPS_USER=deploy
