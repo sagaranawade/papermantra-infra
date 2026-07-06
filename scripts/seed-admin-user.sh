@@ -17,7 +17,7 @@ source .env
 
 EMAIL="${1:-${AUTH_USERNAME:-admin@papermantra.com}}"
 PASSWORD="${2:-${AUTH_PASSWORD:-}}"
-API_BASE="${AUTH_BASE_URL:-https://api.papermantra.com/papermantra}"
+API_BASE="${AUTH_BASE_URL:-http://api:9091}"
 
 if [[ -z "${PASSWORD}" ]]; then
   echo "ERROR: Set AUTH_PASSWORD in .env or pass password as second argument."
