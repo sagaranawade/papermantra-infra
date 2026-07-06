@@ -69,7 +69,7 @@ jobs:
           script: |
             set -euo pipefail
             DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
-            PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || '' }}"
+            PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}"
             SOURCE="${{ github.event.client_payload.source || 'manual' }}"
 
             if [[ ! -d "${DEPLOY_PATH}" ]]; then
