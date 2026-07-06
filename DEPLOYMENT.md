@@ -2,6 +2,8 @@
 
 Everything the AI **cannot** do from your machine is listed here in order. Code/config in all repos is ready; you finish setup on GitHub, the VPS, and Cloudflare.
 
+> **VPS steps 3–11 (detailed):** see **[VPS-SETUP.md](./VPS-SETUP.md)** — use this after DNS + GitHub secrets + deploy user are ready.
+
 ---
 
 ## What is already done (in code)
@@ -48,7 +50,157 @@ So pushed images match the infra `.env` paths above.
 
 ---
 
-## Phase 2 — GitHub: secrets & variables
+## Prod-only mode (current)
+
+**Dev CI/CD deploys are disabled** until you re-enable them. Only production paths are active.
+
+| What runs | Trigger | Where |
+|-----------|---------|-------|
+| App prod image build + push | Tag `v*.*.*` on any app repo | GitHub Actions → GHCR |
+| Infra deploy to VPS | App tag → `repository_dispatch`, or push to infra `main` | `papermantra-infra` workflow |
+| Dev deploy jobs | **Disabled** (`if: false` or `workflow_dispatch` only) | See workflow comments |
+
+**Do not configure** any `DEV_*` GitHub secrets or `development` environment for now.
+
+**Re-enable dev later:**
+
+| Repo | File | Change |
+|------|------|--------|
+| papermantra | `.github/workflows/deploy-dev.yml` | Restore `on.push.branches: [main, develop]` |
+| papermantraservices | `.github/workflows/ci-cd.yml` | `deploy-dev` job `if:` → `github.ref == 'refs/heads/development' && github.event_name == 'push'` |
+| pdfgenerator | `.github/workflows/ci-cd.yml` | `docker-dev` job — same `if` |
+| robofume | `.github/workflows/ci-cd.yml` | `docker-dev` job — same `if` |
+
+PRs and `development` branch pushes still run **build + test** only (no deploy).
+
+---
+
+## VPS: how you connect and where things live
+
+### Two ways to reach the VPS
+
+| Who | How | Credentials live in |
+|-----|-----|---------------------|
+| **You (manual)** | `ssh deploy@YOUR_VPS_IP` from your laptop | Your `~/.ssh/` key added to VPS `authorized_keys` |
+| **GitHub Actions (automated prod deploy)** | `appleboy/ssh-action` in `papermantra-infra/.github/workflows/deploy.yml` | GitHub secrets on **papermantra-infra**: `PROD_SSH_HOST`, `PROD_SSH_USER`, `PROD_SSH_KEY` |
+
+App repos **do not SSH to prod**. They only push images and ping infra via `INFRA_DISPATCH_TOKEN`.
+
+### Directory layout on the VPS (single prod server)
+
+Everything production runs under **`/opt/papermantra-infra`**:
+
+```
+/opt/papermantra-infra/
+├── .env                    ← YOUR secrets (Mongo, Redis, JWT, OAuth, AUTH) — never in git
+├── docker-compose.yml      ← full stack (nginx, portal, website, api, pdf, mongo, redis)
+├── nginx/conf.d/           ← reverse proxy for 4 domains
+├── certbot/                ← Let's Encrypt certs
+├── scripts/
+│   ├── deploy.sh           ← pull images + restart (called by GitHub Actions)
+│   ├── rollback.sh
+│   └── backup-volumes.sh
+├── backups/                ← volume backups
+└── .deploy-history         ← rollback tags
+```
+
+**Docker volumes** (data persists here, not in the repo):
+
+| Volume | Contents |
+|--------|----------|
+| `mongo_data` | MongoDB databases (`papermantra`, `pdfgenerator`) |
+| `redis_data` | Redis cache |
+| `api_user_pics`, `api_question_images` | Uploaded files for API |
+| `api_logs`, `pdf_logs` | Application logs |
+
+**What is NOT on the VPS:** app source code, per-app `.env` files, or separate dev servers (dev is local-only for now).
+
+### Prod deploy flow (automated)
+
+```
+1. You: git tag v1.0.0 && git push origin v1.0.0   (any app repo)
+2. GitHub Actions: build image → push ghcr.io/sagaranawade/<service>:latest
+3. GitHub Actions: repository_dispatch → papermantra-infra
+4. Infra workflow: SSH to VPS → cd /opt/papermantra-infra → ./scripts/deploy.sh
+5. VPS: docker login ghcr.io → docker compose pull → docker compose up -d
+6. Infra workflow: smoke tests (papermantra.com, api, pdf, neelmind.com)
+```
+
+---
+
+## VPS `.env` — use local values where possible
+
+Copy `papermantra-infra/.env.example` to `/opt/papermantra-infra/.env` on the VPS.
+Goal: **same business config as local** (credentials, OAuth, JWT, auth users). Only **hostnames/URLs** change because prod uses public domains and Docker network names.
+
+### Copy from local as-is (same values on VPS)
+
+| VPS `.env` key | Copy from (local) | Local value |
+|----------------|-------------------|-------------|
+| `JWT_SECRET` | `papermantraservices` `application.properties` → `app.jwt.secret` | `changeit` |
+| `JWT_ISSUER` | pdf `application.properties` → `papermantra.security.jwt.issuer` | `papermantra` |
+| `JWT_EXPIRATION_MS` | `application.properties` → `app.jwt.expiration-ms` | `2592000000` (30 days) |
+| `AUTH_USERNAME` | pdf `application.properties` → `papermantra.auth.username` | `admin@papermantra.com` |
+| `AUTH_PASSWORD` | pdf `application.properties` → `papermantra.auth.password` | `neelsa@papermantra.com` |
+| `GOOGLE_CLIENT_ID` | `application.properties` → `spring.security.oauth2...google.client-id` | *(your existing client id)* |
+| `GOOGLE_CLIENT_SECRET` | same | *(your existing secret)* |
+| `GOOGLE_GEN_CLIENT_ID` | `application.properties` → `google.oauth.gen.client-id` | *(your existing client id)* |
+| `GOOGLE_GEN_CLIENT_SECRET` | same | *(your existing secret)* |
+| `MONGODB_DATABASE` | local | `papermantra` |
+| `PDF_MONGODB_DATABASE` | local | `pdfgenerator` |
+| `REDIS_PORT` | local | `6379` |
+| `REDIS_SSL_ENABLED` | local | `false` |
+
+**DeepSeek API key** is in `application.properties` and ships inside the API Docker image — no VPS `.env` entry needed (same as local).
+
+### Must differ (infrastructure — cannot use localhost)
+
+| VPS `.env` key | Local value | Production value | Why |
+|----------------|-------------|------------------|-----|
+| `MONGO_ROOT_USER` / `MONGO_ROOT_PASSWORD` | no auth locally | set any password (e.g. `admin` + generated password) | Prod Mongo runs with auth in Docker |
+| `MONGODB_URI` | `localhost:27017` | `mongodb://admin:PASSWORD@mongodb:27017/papermantra?authSource=admin` | Docker service name `mongodb`, not localhost |
+| `PDF_MONGODB_URI` | `localhost:27017` | same host, db `pdfgenerator` | same |
+| `REDIS_HOST` | `localhost` | `redis` | Docker service name |
+| `REDIS_PASSWORD` | empty | any strong password | Prod Redis requires `--requirepass` |
+| `GOOGLE_GEN_REDIRECT_URI` | `http://localhost:9091/.../oauth2callback` | `https://api.papermantra.com/papermantra/api/v1/googledrive/oauth2callback` | Google OAuth + HTTPS |
+| `GOOGLE_GEN_JS_ORIGINS` | `http://localhost:3000,3001` | `https://papermantra.com,https://www.papermantra.com` | Browser origins |
+| `AUTH_BASE_URL` | `http://localhost:9091` | `https://api.papermantra.com/papermantra` | PDF → API (internal Docker could use `http://api:9091/papermantra` but public URL works) |
+| `QP_BASE_URL` | `http://localhost:9091` | `https://api.papermantra.com/papermantra` | PDF → API |
+| `PDF_BASE_URL` | `http://localhost:9092/pdfgenerator` | `https://pdf.papermantra.com/pdfgenerator` | Public PDF URL |
+| `CORS_ALLOWED_ORIGINS` | localhost patterns | `https://papermantra.com,https://www.papermantra.com` | Browser CORS |
+| `CORS_ALLOWED_PATTERNS` | `http://192.168.*.*:*` | `https://*.papermantra.com` | Browser CORS |
+| `IMAGE_*` | local docker build | `ghcr.io/sagaranawade/...:latest` | Pre-built CI images |
+
+**Also register** prod OAuth redirect URIs and JS origins in [Google Cloud Console](https://console.cloud.google.com/) (same client IDs, new URLs).
+
+### Frontend build-time URLs (papermantra + robofume)
+
+React/Next bake URLs at **image build** time. These **must** be public HTTPS (not localhost):
+
+| App | Variable | Production value |
+|-----|----------|------------------|
+| papermantra | `PROD_REACT_APP_API_URL` (GitHub var) | `https://api.papermantra.com/papermantra/api/v1/` |
+| papermantra | `PROD_REACT_APP_API_PDF_GENERATOR_URL` | `https://pdf.papermantra.com/pdfgenerator/api/v1/` |
+| papermantra | `PROD_REACT_APP_API_KEY` (secret) | `"Production API URL"` (same as `.env.production` today) |
+| robofume | `PROD_NEXT_PUBLIC_API_BASE_URL` (optional var) | `https://api.papermantra.com/papermantra/api/v1` |
+
+Local `.env.development` keeps `http://192.168.x.x:9091` — that is correct for local only.
+
+### Should differ later (security — optional for initial launch)
+
+| Item | Local | Recommended prod later |
+|------|-------|------------------------|
+| `JWT_SECRET` | `changeit` | `openssl rand -base64 48` |
+| `MONGO_ROOT_PASSWORD` / `REDIS_PASSWORD` | n/a | strong generated passwords |
+| Hardcoded OAuth / DeepSeek in `application.properties` | committed in repo | move to env-only |
+
+For **first prod launch matching local behavior**, using `changeit` and existing OAuth credentials is fine if you accept the security trade-off.
+
+---
+
+## Phase 2 — GitHub: secrets & variables (prod only)
+
+**Skip all `DEV_*` secrets.** Only configure the rows below.
 
 ### 2.1 `papermantra-infra` repo secrets
 
@@ -124,9 +276,14 @@ sudo mkdir -p /opt
 sudo git clone https://github.com/sagaranawade/papermantra-infra.git /opt/papermantra-infra
 sudo chown -R $USER:$USER /opt/papermantra-infra
 cd /opt/papermantra-infra
+./scripts/vps-bootstrap.sh
 ```
 
+See **[VPS-SETUP.md](./VPS-SETUP.md)** for steps 4–11.
+
 ### 3.4 Create production `.env`
+
+Bootstrap copies `.env.production.template` → `.env` (local-matching OAuth/auth/JWT pre-filled).
 
 ```bash
 cp .env.example .env

@@ -2,7 +2,8 @@
 
 Production orchestration for the PaperMantra platform: Docker Compose stack, Nginx reverse proxy, TLS, backups, monitoring, and VPS deployment automation.
 
-> **Manual setup (VPS, GitHub secrets, Cloudflare, SSL):** see **[DEPLOYMENT.md](./DEPLOYMENT.md)** for the full step-by-step checklist.
+> **Manual setup (VPS, GitHub secrets, Cloudflare, SSL):** see **[DEPLOYMENT.md](./DEPLOYMENT.md)** for the full checklist.  
+> **VPS steps 3–11 (you are here):** see **[VPS-SETUP.md](./VPS-SETUP.md)**.
 
 ## Architecture
 
