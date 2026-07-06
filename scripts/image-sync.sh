@@ -2,7 +2,9 @@
 # =============================================================================
 # image-sync — copy only new/changed question images (source of truth: papermantraservices/images)
 #
-# Updates pdfgenerator/images locally. Optional --deploy pushes to VPS shared volume.
+# Local: papermantraservices/images → pdfgenerator/images
+# Prod (--deploy): upload merge to VPS /opt/papermantra-infra/images, then sync into shared
+#   Docker volume (api + pdf both mount /app/images). VPS staging is never deleted.
 #
 # Usage:
 #   ./scripts/image-sync.sh

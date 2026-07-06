@@ -2,7 +2,8 @@
 # =============================================================================
 # image-replace — wipe target and copy all images from papermantraservices/images
 #
-# Replaces pdfgenerator/images completely. Optional --deploy replaces VPS volume.
+# Local: replaces pdfgenerator/images only (not VPS staging).
+# Prod (--deploy): upload merge to VPS staging, then --replace on Docker volume only.
 #
 # Usage:
 #   ./scripts/image-replace.sh

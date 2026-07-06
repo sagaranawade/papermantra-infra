@@ -129,15 +129,17 @@ image_lib_deploy_to_vps() {
   local ssh_opts=(-o BatchMode=yes -i "${SSH_KEY}")
 
   echo ">> Deploy (${mode}) → ${remote}:${staging}"
+  echo "   NOTE: VPS staging (${staging}) is merge-only — remote files are never deleted."
 
   if [[ "${dry_run}" -eq 1 ]]; then
-    echo "   [dry-run] would upload ${IMAGE_SOURCE_DIR} and run VPS image-${mode}"
+    echo "   [dry-run] would upload new/changed files from ${IMAGE_SOURCE_DIR} and run VPS sync-question-images"
     return
   fi
 
   ssh "${ssh_opts[@]}" "${remote}" "mkdir -p '${staging}'"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -az --delete-after -e "ssh -o BatchMode=yes -i ${SSH_KEY}" \
+    # Merge only — never --delete on VPS staging (/opt/papermantra-infra/images)
+    rsync -az --checksum -e "ssh -o BatchMode=yes -i ${SSH_KEY}" \
       "${IMAGE_SOURCE_DIR}/" "${remote}:${staging}/"
   else
     scp "${ssh_opts[@]}" -r "${IMAGE_SOURCE_DIR}/." "${remote}:${staging}/"

@@ -3,6 +3,9 @@
 # Sync question images from the VPS staging folder into the shared Docker volume
 # used by both api and pdf at /app/images.
 #
+# STAGING (/opt/papermantra-infra/images) is READ-ONLY for this script — files here
+# are never deleted. Only the Docker volume may be wiped with --replace.
+#
 # Prefer from your PC:
 #   papermantra-infra/scripts/image-sync.ps1 -Deploy      # incremental
 #   papermantra-infra/scripts/image-replace.ps1 -Deploy   # full replace
