@@ -45,6 +45,18 @@ fi
 
 mkdir -p certbot/conf certbot/www
 
+# Placeholder self-signed certs (from create-dummy-certs.sh) block certbot with
+# "live directory exists". Remove placeholders only — keep real LE certs (have renewal/*.conf).
+remove_placeholder_cert() {
+  local cert_name="$1"
+  local live="./certbot/conf/live/${cert_name}"
+  local renewal="./certbot/conf/renewal/${cert_name}.conf"
+  if [[ -d "${live}" && ! -f "${renewal}" ]]; then
+    echo ">> Removing placeholder cert for ${cert_name}..."
+    rm -rf "${live}" "./certbot/conf/archive/${cert_name}" "${renewal}"
+  fi
+}
+
 echo ">> Ensuring dummy certificates exist (nginx needs these for :443 blocks)..."
 bash "${SCRIPT_DIR}/create-dummy-certs.sh"
 
@@ -53,6 +65,8 @@ docker compose up -d nginx
 
 echo ">> Requesting real certificates from Let's Encrypt..."
 for domain in "${domains[@]}"; do
+  remove_placeholder_cert "${domain}"
+
   extra_args=""
   if [[ "${domain}" == "${DOMAIN_PAPERMANTRA}" ]]; then
     extra_args="-d ${DOMAIN_PAPERMANTRA} -d ${DOMAIN_PAPERMANTRA_WWW}"
