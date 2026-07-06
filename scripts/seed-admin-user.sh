@@ -27,7 +27,7 @@ fi
 echo ">> Registering admin user ${EMAIL} via ${API_BASE} ..."
 payload=$(printf '{"emailId":"%s","password":"%s"}' "${EMAIL}" "${PASSWORD}")
 
-if curl -fsSk -X POST "${API_BASE}/api/v1/user/register" \
+if curl -fsSk -X POST "${API_BASE}/papermantra/api/v1/user/register" \
   -H "Content-Type: application/json" \
   -d "${payload}"; then
   echo ""
