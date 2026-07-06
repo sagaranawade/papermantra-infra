@@ -41,6 +41,33 @@ echo ">> Recording current image tags..."
 } >> "${HISTORY_FILE}"
 
 echo ">> Pulling latest images..."
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+
+wait_for_image() {
+  local image="$1"
+  local attempts="${2:-36}"
+  local delay="${3:-10}"
+  echo "   waiting for ${image}..."
+  for i in $(seq 1 "${attempts}"); do
+    if docker manifest inspect "${image}" >/dev/null 2>&1; then
+      echo "   ${image} is available (attempt ${i})"
+      return 0
+    fi
+    if [[ "${i}" -eq "${attempts}" ]]; then
+      echo "   ERROR: ${image} not found in registry after $((attempts * delay))s"
+      return 1
+    fi
+    sleep "${delay}"
+  done
+}
+
+for img in "${IMAGE_PAPERMANTRA}" "${IMAGE_ROBOFUME}" "${IMAGE_SERVICES}" "${IMAGE_PDF}"; do
+  wait_for_image "${img}"
+done
+
 docker compose pull
 
 echo ">> Migrating legacy image volumes (one-time safe merge)..."

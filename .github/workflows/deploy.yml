@@ -89,8 +89,12 @@ jobs:
             fi
 
             if [[ -n "${PIN_TAG}" ]]; then
+              # metadata-action emits "1.0.6"; GHCR tags use git tag "v1.0.6"
+              if [[ "${PIN_TAG}" != v* ]]; then
+                PIN_TAG="v${PIN_TAG}"
+              fi
               echo "Pinning all IMAGE_* tags to :${PIN_TAG}"
-              sed -i "s|:latest|:${PIN_TAG}|g" .env
+              sed -i -E "s|:latest|:${PIN_TAG}|g; s|:v?[0-9]+\.[0-9]+\.[0-9]+|:${PIN_TAG}|g" .env
             fi
 
             if [[ -n "${GHCR_PAT:-}" ]]; then
