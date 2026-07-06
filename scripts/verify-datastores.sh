@@ -59,10 +59,11 @@ echo ">> Shared question images volume (/app/images in api + pdf)..."
 api_count="$(docker compose exec -T api sh -c 'ls -1 /app/images 2>/dev/null | wc -l' | tr -d ' \r')"
 pdf_count="$(docker compose exec -T pdf sh -c 'ls -1 /app/images 2>/dev/null | wc -l' | tr -d ' \r')"
 echo "   api files: ${api_count}, pdf files: ${pdf_count} (same volume when counts match after upload)"
-if docker compose exec -T api sh -c 'test -d /app/images && touch /app/images/.write-test && rm -f /app/images/.write-test'; then
-  echo "   OK writable"
+if docker compose exec -T api sh -c 'touch /app/images/.write-test && rm -f /app/images/.write-test' \
+  && docker compose exec -T pdf sh -c 'touch /app/images/.write-test && rm -f /app/images/.write-test'; then
+  echo "   OK writable (api + pdf)"
 else
-  echo "   FAIL not writable"
+  echo "   FAIL not writable — run ./scripts/migrate-image-volumes.sh"
   failed=1
 fi
 

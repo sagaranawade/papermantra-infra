@@ -227,5 +227,6 @@ volumes:
   api_logs:
   api_user_pics:
   question_images:
+    external: true
     name: papermantra_question_images
   pdf_logs:

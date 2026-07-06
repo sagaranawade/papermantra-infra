@@ -35,10 +35,10 @@ for legacy in "${LEGACY_VOLUMES[@]}"; do
     sh -c 'if [ -n "$(ls -A /from 2>/dev/null)" ]; then cp -an /from/. /to/; fi'
 done
 
-echo ">> Fixing permissions on shared images volume..."
+echo ">> Fixing permissions on shared images volume (api=100, pdf=999)..."
 docker run --rm \
   -v "${TARGET_VOL}:/data" \
   alpine:3.20 \
-  sh -c 'chown -R 1000:1000 /data 2>/dev/null || chmod -R a+rwX /data'
+  sh -c 'chmod -R a+rwX /data'
 
 echo ">> Done. Redeploy with: ./scripts/deploy.sh"
