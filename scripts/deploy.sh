@@ -67,7 +67,7 @@ wait_for() {
   return 1
 }
 
-wait_for api "http://localhost:9091/papermantra/actuator/health" 30 10 || true
+wait_for api "http://localhost:9092/actuator/health" 30 10 || true
 wait_for pdf "http://localhost:9092/pdfgenerator/actuator/health" 30 10 || true
 wait_for portal "http://localhost:8080/healthz" 20 5 || true
 wait_for website "http://localhost:3000/" 20 5 || true
