@@ -48,6 +48,7 @@ echo ">> Archiving uploaded media volumes..."
 docker run --rm \
   -v papermantra_api_user_pics:/data/user_pics:ro \
   -v papermantra_api_question_images:/data/images:ro \
+  -v papermantra_pdf_images:/data/pdf_images:ro \
   -v "${DEST}:/backup" \
   alpine:3.20 \
   sh -c 'tar czf /backup/media-volumes.tar.gz -C /data .'

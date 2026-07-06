@@ -1,0 +1,19 @@
+# Copy to sync-data.config and edit paths for your machine.
+# Used by sync-data-to-prod.ps1 (Windows) and sync-data-to-prod.sh (bash).
+
+VPS_HOST=187.127.189.114
+VPS_USER=deploy
+VPS_PATH=/opt/papermantra-infra
+SSH_KEY=C:/Users/Sagar/.ssh/papermantra_deploy_ci
+
+# Local MongoDB (native install or Docker publishing 27017)
+LOCAL_MONGO_HOST=host.docker.internal
+LOCAL_MONGO_PORT=27017
+
+# Project roots (images + optional userPic)
+PAPERMANTRA_SERVICES_ROOT=D:/PaperMantra Projects/Git Hub New Repos/papermantraservices
+PDFGENERATOR_ROOT=D:/PaperMantra Projects/Git Hub New Repos/pdfgenerator
+
+# Database names on prod (must match papermantra-infra/.env)
+PAPERMANTRA_DB=papermantra
+PDFGENERATOR_DB=pdfgenerator

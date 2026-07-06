@@ -103,8 +103,8 @@ services:
       GOOGLE_GEN_JS_ORIGINS: ${GOOGLE_GEN_JS_ORIGINS}
     volumes:
       - api_logs:/var/log/papermantra
-      - api_user_pics:/workspace/userPic
-      - api_question_images:/workspace/images
+      - api_user_pics:/app/userPic
+      - api_question_images:/app/images
     depends_on:
       mongodb:
         condition: service_healthy
@@ -146,6 +146,7 @@ services:
       CORS_ALLOWED_PATTERNS: ${CORS_ALLOWED_PATTERNS}
     volumes:
       - pdf_logs:/var/log/pdfgenerator
+      - pdf_images:/app/images
     depends_on:
       mongodb:
         condition: service_healthy
@@ -221,4 +222,5 @@ volumes:
   api_logs:
   api_user_pics:
   api_question_images:
+  pdf_images:
   pdf_logs:

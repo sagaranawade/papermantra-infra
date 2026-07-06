@@ -10,6 +10,10 @@ certbot/www/
 .deploy-history
 .deploy-lock
 backups/
+.sync-staging/
+
+# Local sync config (machine-specific paths)
+scripts/sync-data.config
 
 # OS / editor
 .DS_Store
