@@ -157,9 +157,15 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       CORS_ALLOWED_PATTERNS: ${CORS_ALLOWED_PATTERNS}
       PAPERMANTRA_QUESTIONS_IMAGES_LOCAL_DIR: /app/images
+      # Tectonic cache — appuser has no home dir in image; without these, PDF compile fails with "Permission denied"
+      HOME: /tmp
+      TECTONIC_CACHE_DIR: /tmp/tectonic-cache
+      XDG_CACHE_HOME: /tmp/cache
+      XDG_CONFIG_HOME: /tmp/config
     volumes:
       - pdf_logs:/var/log/pdfgenerator
       - question_images:/app/images
+      - tectonic_cache:/tmp/tectonic-cache
     depends_on:
       mongodb:
         condition: service_healthy
@@ -240,3 +246,4 @@ volumes:
     external: true
     name: papermantra_question_images
   pdf_logs:
+  tectonic_cache:
