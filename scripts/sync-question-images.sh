@@ -3,9 +3,11 @@
 # Sync question images from the VPS staging folder into the shared Docker volume
 # used by both api and pdf at /app/images.
 #
-# Workflow:
-#   1. Upload files with WinSCP → /opt/papermantra-infra/images/
-#   2. On the VPS: ./scripts/sync-question-images.sh
+# Prefer from your PC:
+#   papermantra-infra/scripts/image-sync.ps1 -Deploy      # incremental
+#   papermantra-infra/scripts/image-replace.ps1 -Deploy   # full replace
+#
+# Or upload with WinSCP → /opt/papermantra-infra/images/ then run this on VPS.
 #
 # Both papermantra-api and papermantra-pdf mount the same volume
 # (papermantra_question_images). One sync updates both services.
