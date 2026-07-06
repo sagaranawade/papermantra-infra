@@ -72,6 +72,32 @@ Invoke-DockerMongo @(
     '--gzip'
 )
 
+$pmArchive = Join-Path $StagingLocal 'papermantra.archive.gz'
+$pdfArchive = Join-Path $StagingLocal 'pdfgenerator.archive.gz'
+$minBytes = 500
+
+foreach ($pair in @(
+    @{ Label = $PmDb; Path = $pmArchive },
+    @{ Label = $PdfDb; Path = $pdfArchive }
+)) {
+    if (-not (Test-Path $pair.Path)) {
+        Write-Error "Dump missing: $($pair.Path)"
+    }
+    $size = (Get-Item $pair.Path).Length
+    if ($size -lt $minBytes) {
+        Write-Error @"
+$($pair.Label) dump is only ${size} bytes — local MongoDB appears empty.
+
+Your Mongo on ${MongoHost}:${MongoPort} has no data to sync. Before re-running:
+  1. Start the stack that has your dev data (papermantraservices or pdfgenerator docker compose)
+  2. Or dump from MongoDB Atlas / another backup (see scripts/sync-data.config.example)
+  3. Verify counts:
+     docker run --rm --add-host=host.docker.internal:host-gateway mongo:7.0 mongosh --quiet mongodb://${MongoHost}:${MongoPort}/${PmDb} --eval "db.login_info.countDocuments()"
+"@
+    }
+    Write-Host "   $($pair.Label) archive: $size bytes"
+}
+
 Write-Host ">> Uploading to ${Remote}:${StagingRemote} ..."
 ssh @SshArgs $Remote "mkdir -p '${StagingRemote}'"
 scp @SshArgs "${StagingLocal}\papermantra.archive.gz" "${StagingLocal}\pdfgenerator.archive.gz" "${Remote}:${StagingRemote}/"
