@@ -87,9 +87,13 @@ if [[ "${SKIP_MONGO}" -eq 0 ]]; then
 fi
 
 if [[ "${SKIP_IMAGES}" -eq 0 ]]; then
-  copy_tree_to_volume "${STAGING}/api-images" "papermantra_api_question_images" "${API_UID}" "${API_GID}"
+  copy_tree_to_volume "${STAGING}/api-images" "papermantra_question_images" "${API_UID}" "${PDF_GID}"
   copy_tree_to_volume "${STAGING}/api-userPic" "papermantra_api_user_pics" "${API_UID}" "${API_GID}"
-  copy_tree_to_volume "${STAGING}/pdf-images" "papermantra_pdf_images" "${PDF_UID}" "${PDF_GID}"
+  # pdf reads the same shared images volume as api (no separate pdf-images copy)
+  docker run --rm \
+    -v papermantra_question_images:/data \
+    alpine:3.20 \
+    sh -c "chmod -R a+rwX /data"
 fi
 
 echo ">> Restarting api and pdf..."
