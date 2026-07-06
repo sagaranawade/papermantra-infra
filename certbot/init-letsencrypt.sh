@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Bootstrap Let's Encrypt certificates for all production domains.
-#
-# Prerequisites:
-#   1. DNS A records for all domains must point to this VPS.
-#   2. Ports 80/443 open in the firewall.
-#   3. .env file populated (see .env.example).
-#
-# Usage:
-#   chmod +x certbot/init-letsencrypt.sh
-#   ./certbot/init-letsencrypt.sh
 # =============================================================================
 set -euo pipefail
 
@@ -18,7 +9,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
 if [[ ! -f .env ]]; then
-  echo "ERROR: .env not found. Copy .env.example to .env first."
+  echo "ERROR: .env not found."
   exit 1
 fi
 
@@ -38,26 +29,14 @@ staging="${STAGING:-0}"
 
 if [[ "${staging}" != "0" ]]; then
   staging_arg="--staging"
-  echo ">> Using Let's Encrypt STAGING (no browser-trusted certs)"
+  echo ">> Using Let's Encrypt STAGING"
 else
   staging_arg=""
 fi
 
 mkdir -p certbot/conf certbot/www
 
-# Placeholder self-signed certs (from create-dummy-certs.sh) block certbot with
-# "live directory exists". Remove placeholders only — keep real LE certs (have renewal/*.conf).
-remove_placeholder_cert() {
-  local cert_name="$1"
-  local live="./certbot/conf/live/${cert_name}"
-  local renewal="./certbot/conf/renewal/${cert_name}.conf"
-  if [[ -d "${live}" && ! -f "${renewal}" ]]; then
-    echo ">> Removing placeholder cert for ${cert_name}..."
-    rm -rf "${live}" "./certbot/conf/archive/${cert_name}" "${renewal}"
-  fi
-}
-
-echo ">> Ensuring dummy certificates exist (nginx needs these for :443 blocks)..."
+echo ">> Ensuring dummy certificates exist (nginx :443)..."
 bash "${SCRIPT_DIR}/create-dummy-certs.sh"
 
 echo ">> Starting nginx..."
@@ -65,7 +44,8 @@ docker compose up -d nginx
 
 echo ">> Requesting real certificates from Let's Encrypt..."
 for domain in "${domains[@]}"; do
-  remove_placeholder_cert "${domain}"
+  echo ">> Preparing ${domain}..."
+  bash "${SCRIPT_DIR}/cleanup-placeholders.sh" "${domain}"
 
   extra_args=""
   if [[ "${domain}" == "${DOMAIN_PAPERMANTRA}" ]]; then
@@ -80,15 +60,18 @@ for domain in "${domains[@]}"; do
     certbot certonly --webroot -w /var/www/certbot \
       ${staging_arg} \
       ${extra_args} \
+      --cert-name ${domain} \
       --email ${email} \
       --rsa-key-size ${rsa_key_size} \
       --agree-tos \
       --no-eff-email \
       --force-renewal" certbot
+
+  sudo chown -R "$(whoami):$(whoami)" certbot/conf 2>/dev/null || true
 done
 
 echo ">> Reloading nginx with real certificates..."
 docker compose exec nginx nginx -s reload
 
-echo ">> Done. Start the certbot renewal sidecar:"
+echo ">> Done. Start renewal sidecar:"
 echo "   docker compose --profile certbot up -d certbot"
