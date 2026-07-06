@@ -75,7 +75,16 @@ PRs and `development` branch pushes still run **build + test** only (no deploy).
 
 ---
 
-## VPS: how you connect and where things live
+## Production config — single file on `main`
+
+All production values live in **`papermantra-infra/.env`** (committed on `main`).
+
+- **No** separate `.env` on the VPS  
+- **No** `cp .env.example` / `nano .env` on the server  
+- To change config: edit `.env` locally → push → `git pull` on VPS → `./scripts/deploy.sh`
+
+> Keep the **papermantra-infra** repository **private** (it contains credentials).
+
 
 ### Two ways to reach the VPS
 
@@ -92,7 +101,7 @@ Everything production runs under **`/opt/papermantra-infra`**:
 
 ```
 /opt/papermantra-infra/
-├── .env                    ← YOUR secrets (Mongo, Redis, JWT, OAuth, AUTH) — never in git
+├── .env                    ← production config (committed on main)
 ├── docker-compose.yml      ← full stack (nginx, portal, website, api, pdf, mongo, redis)
 ├── nginx/conf.d/           ← reverse proxy for 4 domains
 ├── certbot/                ← Let's Encrypt certs
@@ -281,32 +290,14 @@ cd /opt/papermantra-infra
 
 See **[VPS-SETUP.md](./VPS-SETUP.md)** for steps 4–11.
 
-### 3.4 Create production `.env`
+### 3.4 Production `.env`
 
-Bootstrap copies `.env.production.template` → `.env` (local-matching OAuth/auth/JWT pre-filled).
+Comes from the repo on `main` after `git pull`. No manual copy step.
 
 ```bash
-cp .env.example .env
-nano .env
+git pull origin main
+./scripts/vps-bootstrap.sh
 ```
-
-**Must change** (generate with `openssl rand -base64 48`):
-
-- `MONGO_ROOT_PASSWORD`
-- `REDIS_PASSWORD`
-- `JWT_SECRET`
-- `GRAFANA_ADMIN_PASSWORD` (if using monitoring)
-
-**Must fill** (from Google Cloud Console):
-
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_GEN_CLIENT_ID`, `GOOGLE_GEN_CLIENT_SECRET`
-
-**Must fill** (PDF service auth to API):
-
-- `AUTH_USERNAME`, `AUTH_PASSWORD`
-
-Verify `MONGODB_URI` and `PDF_MONGODB_URI` use the same `MONGO_ROOT_USER` / `MONGO_ROOT_PASSWORD` you set.
 
 ### 3.5 Log in to GHCR on the VPS
 

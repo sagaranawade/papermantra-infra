@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run once on the VPS after cloning papermantra-infra to /opt/papermantra-infra
+# Run once on the VPS after cloning papermantra-infra.
+# Production config lives in .env on main — no copy/edit step on the server.
 #
 # Usage (as deploy):
 #   cd /opt/papermantra-infra
@@ -20,19 +21,11 @@ echo ">> Making scripts executable..."
 chmod +x scripts/*.sh certbot/*.sh
 
 if [[ ! -f .env ]]; then
-  if [[ -f .env.production.template ]]; then
-    echo ">> Creating .env from .env.production.template..."
-    cp .env.production.template .env
-    echo "   EDIT REQUIRED: nano .env"
-    echo "   Set MONGO_ROOT_PASSWORD, REDIS_PASSWORD (and GRAFANA if using monitoring)"
-  else
-    echo ">> Creating .env from .env.example..."
-    cp .env.example .env
-    echo "   EDIT REQUIRED: nano .env"
-  fi
-else
-  echo ">> .env already exists — not overwriting."
+  echo "ERROR: .env not found. Run: git pull origin main"
+  exit 1
 fi
+
+echo ">> Using .env from repository (main branch)."
 
 if groups | grep -q docker || id -Gn | grep -q docker; then
   echo ">> Docker group: OK"
@@ -48,14 +41,14 @@ else
   exit 1
 fi
 
+./scripts/validate-env.sh
+
 echo ""
 echo ">> Next steps:"
-echo "   1. nano .env                          # set CHANGE_ME passwords"
-echo "   2. ./scripts/validate-env.sh"
-echo "   3. echo PAT | docker login ghcr.io -u sagaranawade --password-stdin"
-echo "   4. ./certbot/init-letsencrypt.sh"
-echo "   5. docker compose --profile certbot up -d certbot"
-echo "   6. Tag v1.0.0 in all 4 app repos (GitHub Actions → GHCR)"
-echo "   7. ./scripts/deploy.sh"
+echo "   1. ./scripts/ghcr-login.sh"
+echo "   2. ./certbot/init-letsencrypt.sh"
+echo "   3. docker compose --profile certbot up -d certbot"
+echo "   4. Tag v1.0.0 in all 4 app repos (GitHub Actions → GHCR)"
+echo "   5. ./scripts/deploy.sh"
 echo ""
-echo "See VPS-SETUP.md for full instructions."
+echo "To change config later: edit .env in the repo, push to main, git pull on VPS."

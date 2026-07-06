@@ -84,7 +84,7 @@ jobs:
             git reset --hard origin/main
 
             if [[ ! -f .env ]]; then
-              echo "ERROR: ${DEPLOY_PATH}/.env is missing. Create it from .env.example on the server."
+              echo "ERROR: ${DEPLOY_PATH}/.env is missing. Run git pull origin main (config is committed on main)."
               exit 1
             fi
 

@@ -2,9 +2,11 @@
 # papermantra-infra — production stack
 #
 # Usage on VPS:
-#   cp .env.example .env && nano .env
-#   docker compose pull
-#   docker compose up -d
+#   git clone ... && cd /opt/papermantra-infra
+#   ./scripts/vps-bootstrap.sh
+#   ./scripts/deploy.sh
+#
+# Production config: .env (committed on main — edit in repo, git pull on VPS)
 #
 # Optional monitoring overlay:
 #   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
@@ -97,10 +99,6 @@ services:
       REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_GEN_CLIENT_ID: ${GOOGLE_GEN_CLIENT_ID}
-      GOOGLE_GEN_CLIENT_SECRET: ${GOOGLE_GEN_CLIENT_SECRET}
       GOOGLE_GEN_REDIRECT_URI: ${GOOGLE_GEN_REDIRECT_URI}
       GOOGLE_GEN_JS_ORIGINS: ${GOOGLE_GEN_JS_ORIGINS}
     volumes:

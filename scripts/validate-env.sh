@@ -7,7 +7,7 @@ ENV_FILE="${ROOT_DIR}/.env"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "ERROR: ${ENV_FILE} not found."
-  echo "Run: cp .env.production.template .env && nano .env"
+  echo "Run: git pull origin main"
   exit 1
 fi
 
@@ -49,12 +49,10 @@ check_optional_warn() {
 echo ">> Checking required secrets..."
 for var in \
   MONGO_ROOT_PASSWORD REDIS_PASSWORD JWT_SECRET \
-  GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
-  GOOGLE_GEN_CLIENT_ID GOOGLE_GEN_CLIENT_SECRET \
   AUTH_USERNAME AUTH_PASSWORD \
   MONGODB_URI PDF_MONGODB_URI \
   IMAGE_PAPERMANTRA IMAGE_ROBOFUME IMAGE_SERVICES IMAGE_PDF \
-  CERTBOT_EMAIL; do
+  CERTBOT_EMAIL GOOGLE_GEN_REDIRECT_URI GOOGLE_GEN_JS_ORIGINS; do
   check_required "${var}"
 done
 

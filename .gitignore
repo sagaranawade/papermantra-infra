@@ -1,7 +1,6 @@
-# Local secrets — never commit
-.env
-.env.*
-!.env.example
+# Optional local overrides only (production uses committed .env on main)
+.env.local
+.env.*.local
 
 # Certbot live data (generated on the VPS)
 certbot/conf/

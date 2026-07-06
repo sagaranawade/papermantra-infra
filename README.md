@@ -42,7 +42,7 @@ Application images are built and pushed by each app repo's CI pipeline (GHCR). T
 papermantra-infra/
 ├── docker-compose.yml              # Core production stack
 ├── docker-compose.monitoring.yml   # Optional Prometheus + Grafana overlay
-├── .env.example                    # Template — copy to .env on the VPS
+├── .env                            # Production config (committed on main)
 ├── nginx/
 │   ├── nginx.conf
 │   └── conf.d/                     # Per-domain reverse proxy configs
@@ -90,8 +90,12 @@ cd /opt/papermantra-infra
 ### 3. Configure environment
 
 ```bash
-cp .env.example .env
-nano .env   # set passwords, OAuth keys, registry owner, image tags
+cp .env is not needed — `.env` is on `main`. After clone:
+
+```bash
+cd /opt/papermantra-infra
+./scripts/vps-bootstrap.sh
+```
 ```
 
 Generate strong secrets:
@@ -267,7 +271,7 @@ docker compose logs -f --tail=100
 
 ## Security notes
 
-- Never commit `.env` — it contains production secrets
+- Never commit `.env.local` — optional overrides only. Production `.env` is committed on `main` for this single-VPS setup.
 - MongoDB and Redis are **not** published to the host; only Nginx exposes ports 80/443
 - Rotate `JWT_SECRET`, `MONGO_ROOT_PASSWORD`, and `REDIS_PASSWORD` on a schedule
 - Keep base images updated: `docker compose pull && docker compose up -d`
