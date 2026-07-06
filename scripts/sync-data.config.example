@@ -10,10 +10,6 @@ SSH_KEY=C:/Users/Sagar/.ssh/papermantra_deploy_ci
 LOCAL_MONGO_HOST=host.docker.internal
 LOCAL_MONGO_PORT=27017
 
-# Project roots (images + optional userPic)
-PAPERMANTRA_SERVICES_ROOT=D:/PaperMantra Projects/Git Hub New Repos/papermantraservices
-PDFGENERATOR_ROOT=D:/PaperMantra Projects/Git Hub New Repos/pdfgenerator
-
 # Database names on prod (must match papermantra-infra/.env)
 PAPERMANTRA_DB=papermantra
 PDFGENERATOR_DB=pdfgenerator

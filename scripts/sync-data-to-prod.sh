@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Sync local MongoDB + question images to production VPS (bash/WSL/macOS).
+# Sync local MongoDB databases to production VPS (bash/WSL/macOS).
 #
 # Setup:
 #   cp scripts/sync-data.config.example scripts/sync-data.config
@@ -8,22 +8,11 @@
 #
 # Usage:
 #   ./scripts/sync-data-to-prod.sh
-#   ./scripts/sync-data-to-prod.sh --skip-mongo
-#   ./scripts/sync-data-to-prod.sh --skip-images
 # =============================================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${ROOT_DIR}/scripts/sync-data.config"
-SKIP_MONGO=0
-SKIP_IMAGES=0
-
-for arg in "$@"; do
-  case "${arg}" in
-    --skip-mongo) SKIP_MONGO=1 ;;
-    --skip-images) SKIP_IMAGES=1 ;;
-  esac
-done
 
 if [[ ! -f "${CONFIG}" ]]; then
   echo "ERROR: missing ${CONFIG} (copy sync-data.config.example)"
@@ -43,41 +32,31 @@ trap cleanup EXIT
 
 echo ">> Local staging: ${STAGING_LOCAL}"
 
-if [[ "${SKIP_MONGO}" -eq 0 ]]; then
-  echo ">> Dumping MongoDB: ${PAPERMANTRA_DB}"
-  docker run --rm \
-    --add-host=host.docker.internal:host-gateway \
-    -v "${STAGING_LOCAL}:/backup" \
-    mongo:7.0 \
-    mongodump --host="${LOCAL_MONGO_HOST}" --port="${LOCAL_MONGO_PORT}" \
-      --db="${PAPERMANTRA_DB}" --archive=/backup/papermantra.archive.gz --gzip
+echo ">> Dumping MongoDB: ${PAPERMANTRA_DB}"
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v "${STAGING_LOCAL}:/backup" \
+  mongo:7.0 \
+  mongodump --host="${LOCAL_MONGO_HOST}" --port="${LOCAL_MONGO_PORT}" \
+    --db="${PAPERMANTRA_DB}" --archive=/backup/papermantra.archive.gz --gzip
 
-  echo ">> Dumping MongoDB: ${PDFGENERATOR_DB}"
-  docker run --rm \
-    --add-host=host.docker.internal:host-gateway \
-    -v "${STAGING_LOCAL}:/backup" \
-    mongo:7.0 \
-    mongodump --host="${LOCAL_MONGO_HOST}" --port="${LOCAL_MONGO_PORT}" \
-      --db="${PDFGENERATOR_DB}" --archive=/backup/pdfgenerator.archive.gz --gzip
-fi
-
-if [[ "${SKIP_IMAGES}" -eq 0 ]]; then
-  echo ">> Copying image folders..."
-  cp -a "${PAPERMANTRA_SERVICES_ROOT}/images" "${STAGING_LOCAL}/api-images"
-  cp -a "${PAPERMANTRA_SERVICES_ROOT}/userPic" "${STAGING_LOCAL}/api-userPic"
-  cp -a "${PDFGENERATOR_ROOT}/images" "${STAGING_LOCAL}/pdf-images"
-fi
+echo ">> Dumping MongoDB: ${PDFGENERATOR_DB}"
+docker run --rm \
+  --add-host=host.docker.internal:host-gateway \
+  -v "${STAGING_LOCAL}:/backup" \
+  mongo:7.0 \
+  mongodump --host="${LOCAL_MONGO_HOST}" --port="${LOCAL_MONGO_PORT}" \
+    --db="${PDFGENERATOR_DB}" --archive=/backup/pdfgenerator.archive.gz --gzip
 
 echo ">> Uploading to ${REMOTE}:${STAGING_REMOTE} ..."
 ssh "${SSH_OPTS[@]}" "${REMOTE}" "mkdir -p '${STAGING_REMOTE}'"
-scp "${SSH_OPTS[@]}" -r "${STAGING_LOCAL}/." "${REMOTE}:${STAGING_REMOTE}/"
-
-FLAGS=()
-[[ "${SKIP_MONGO}" -eq 1 ]] && FLAGS+=(--skip-mongo)
-[[ "${SKIP_IMAGES}" -eq 1 ]] && FLAGS+=(--skip-images)
+scp "${SSH_OPTS[@]}" \
+  "${STAGING_LOCAL}/papermantra.archive.gz" \
+  "${STAGING_LOCAL}/pdfgenerator.archive.gz" \
+  "${REMOTE}:${STAGING_REMOTE}/"
 
 echo ">> Running restore on VPS..."
 ssh "${SSH_OPTS[@]}" "${REMOTE}" \
-  "cd '${VPS_PATH}' && git pull origin main && chmod +x scripts/restore-data-on-vps.sh && ./scripts/restore-data-on-vps.sh ${FLAGS[*]:-}"
+  "cd '${VPS_PATH}' && git pull origin main && chmod +x scripts/restore-data-on-vps.sh && ./scripts/restore-data-on-vps.sh"
 
 echo ">> Sync complete."
