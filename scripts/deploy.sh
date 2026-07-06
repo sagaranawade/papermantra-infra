@@ -43,6 +43,9 @@ echo ">> Recording current image tags..."
 echo ">> Pulling latest images..."
 docker compose pull
 
+echo ">> Migrating legacy image volumes (one-time safe merge)..."
+"${ROOT_DIR}/scripts/migrate-image-volumes.sh"
+
 echo ">> Starting / updating containers..."
 docker compose up -d --remove-orphans
 
@@ -86,5 +89,8 @@ docker compose exec -T nginx nginx -s reload 2>/dev/null || docker compose resta
 
 echo ">> Pruning dangling images..."
 docker image prune -f
+
+echo ">> Verifying MongoDB, Redis, and shared images..."
+"${ROOT_DIR}/scripts/verify-datastores.sh"
 
 echo ">> Deployment complete."

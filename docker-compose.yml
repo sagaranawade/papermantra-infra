@@ -101,10 +101,12 @@ services:
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
       GOOGLE_GEN_REDIRECT_URI: ${GOOGLE_GEN_REDIRECT_URI}
       GOOGLE_GEN_JS_ORIGINS: ${GOOGLE_GEN_JS_ORIGINS}
+      QUESTIONS_IMAGES_DIR: /app/images
+      FILE_UPLOAD_DIR: /app/userPic
     volumes:
       - api_logs:/var/log/papermantra
       - api_user_pics:/app/userPic
-      - api_question_images:/app/images
+      - question_images:/app/images
     depends_on:
       mongodb:
         condition: service_healthy
@@ -144,9 +146,10 @@ services:
       BRANDING_BASE_URL: ${BRANDING_BASE_URL:-https://api.papermantra.com/papermantra}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       CORS_ALLOWED_PATTERNS: ${CORS_ALLOWED_PATTERNS}
+      PAPERMANTRA_QUESTIONS_IMAGES_LOCAL_DIR: /app/images
     volumes:
       - pdf_logs:/var/log/pdfgenerator
-      - pdf_images:/app/images
+      - question_images:/app/images
     depends_on:
       mongodb:
         condition: service_healthy
@@ -216,11 +219,13 @@ networks:
     driver: bridge
 
 volumes:
+  # Named volumes persist across container restarts and image updates.
+  # NEVER run: docker compose down -v  (that deletes all data).
   mongo_data:
   mongo_config:
   redis_data:
   api_logs:
   api_user_pics:
-  api_question_images:
-  pdf_images:
+  question_images:
+    name: papermantra_question_images
   pdf_logs:
