@@ -70,7 +70,7 @@ wait_for() {
 wait_for api "http://localhost:9092/actuator/health" 30 10 || true
 wait_for pdf "http://localhost:9092/pdfgenerator/actuator/health" 30 10 || true
 wait_for portal "http://localhost:8080/healthz" 20 5 || true
-wait_for website "http://localhost:3000/" 20 5 || true
+wait_for website "http://127.0.0.1:3000/" 20 5 || true
 
 if [[ "${failed}" -eq 1 ]]; then
   echo ">> Deployment health checks failed."
