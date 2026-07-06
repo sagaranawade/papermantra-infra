@@ -29,9 +29,18 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Optional tag suffix to pin all services (e.g. v1.2.3)'
+        description: 'Image tag to pin (e.g. v1.0.6). Leave empty to deploy current .env tags.'
         required: false
         default: ''
+      pin_all:
+        description: 'Pin ALL services to image_tag (unified release). If false, use deploy_service only.'
+        type: boolean
+        required: false
+        default: false
+      deploy_service:
+        description: 'Single service when pin_all=false (portal|website|api|pdf). Ignored when pin_all=true.'
+        required: false
+        default: 'all'
   repository_dispatch:
     types: [deploy-infra]
 
@@ -70,6 +79,7 @@ jobs:
             set -euo pipefail
             DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
             PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}"
+            PIN_ALL="${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}"
             SOURCE="${{ github.event.client_payload.source || 'manual' }}"
 
             if [[ ! -d "${DEPLOY_PATH}" ]]; then
@@ -88,13 +98,27 @@ jobs:
               exit 1
             fi
 
+            DEPLOY_SERVICES="portal,website,api,pdf"
+
             if [[ -n "${PIN_TAG}" ]]; then
-              # metadata-action emits "1.0.6"; GHCR tags use git tag "v1.0.6"
-              if [[ "${PIN_TAG}" != v* ]]; then
-                PIN_TAG="v${PIN_TAG}"
+              chmod +x scripts/pin-image-tag.sh
+              if [[ "${PIN_ALL}" == "true" ]]; then
+                echo "Unified release: pinning all IMAGE_* to ${PIN_TAG}"
+                ./scripts/pin-image-tag.sh "${PIN_TAG}" --all
+              elif [[ "${SOURCE}" != "manual" ]]; then
+                echo "Per-service release: pinning ${SOURCE} to ${PIN_TAG}"
+                ./scripts/pin-image-tag.sh "${PIN_TAG}" --source "${SOURCE}"
+                case "${SOURCE}" in
+                  papermantra) DEPLOY_SERVICES="portal" ;;
+                  robofume) DEPLOY_SERVICES="website" ;;
+                  papermantraservices) DEPLOY_SERVICES="api" ;;
+                  pdfgenerator) DEPLOY_SERVICES="pdf" ;;
+                esac
+              elif [[ "${{ github.event.inputs.deploy_service }}" != "all" && -n "${{ github.event.inputs.deploy_service }}" ]]; then
+                echo "Manual single-service pin: ${{ github.event.inputs.deploy_service }} -> ${PIN_TAG}"
+                ./scripts/pin-image-tag.sh "${PIN_TAG}" --service "${{ github.event.inputs.deploy_service }}"
+                DEPLOY_SERVICES="${{ github.event.inputs.deploy_service }}"
               fi
-              echo "Pinning all IMAGE_* tags to :${PIN_TAG}"
-              sed -i -E "s|:latest|:${PIN_TAG}|g; s|:v?[0-9]+\.[0-9]+\.[0-9]+|:${PIN_TAG}|g" .env
             fi
 
             if [[ -n "${GHCR_PAT:-}" ]]; then
@@ -104,7 +128,8 @@ jobs:
             fi
 
             chmod +x scripts/*.sh certbot/*.sh
-            echo "Deploy triggered by: ${SOURCE}"
+            echo "Deploy triggered by: ${SOURCE} (services: ${DEPLOY_SERVICES})"
+            export DEPLOY_SERVICES
             ./scripts/deploy.sh --rollback-on-failure
 
       - name: Smoke tests

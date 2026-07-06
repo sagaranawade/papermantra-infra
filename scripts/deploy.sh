@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Pull latest images and restart the stack with health verification.
-# Called locally on the VPS or by GitHub Actions over SSH.
+# Pull images and restart services with health verification.
 #
 # Usage:
 #   ./scripts/deploy.sh
 #   ./scripts/deploy.sh --rollback-on-failure
+#   DEPLOY_SERVICES=pdf ./scripts/deploy.sh
+#   DEPLOY_SERVICES=portal,api,pdf,website ./scripts/deploy.sh   # default: all app services
 # =============================================================================
 set -euo pipefail
 
@@ -40,11 +41,26 @@ echo ">> Recording current image tags..."
   grep '^IMAGE_' .env || true
 } >> "${HISTORY_FILE}"
 
-echo ">> Pulling latest images..."
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-portal,website,api,pdf}"
+IFS=',' read -r -a SERVICE_LIST <<< "${DEPLOY_SERVICES}"
+
 set -a
 # shellcheck disable=SC1091
 source .env
 set +a
+
+service_image_var() {
+  case "$1" in
+    portal) echo "IMAGE_PAPERMANTRA" ;;
+    website) echo "IMAGE_ROBOFUME" ;;
+    api) echo "IMAGE_SERVICES" ;;
+    pdf) echo "IMAGE_PDF" ;;
+    *)
+      echo "ERROR: unknown service '$1'" >&2
+      exit 1
+      ;;
+  esac
+}
 
 wait_for_image() {
   local image="$1"
@@ -64,17 +80,23 @@ wait_for_image() {
   done
 }
 
-for img in "${IMAGE_PAPERMANTRA}" "${IMAGE_ROBOFUME}" "${IMAGE_SERVICES}" "${IMAGE_PDF}"; do
-  wait_for_image "${img}"
+echo ">> Deploying services: ${DEPLOY_SERVICES}"
+echo ">> Waiting for image(s) in registry..."
+for svc in "${SERVICE_LIST[@]}"; do
+  var="$(service_image_var "${svc}")"
+  wait_for_image "${!var}"
 done
 
-docker compose pull
+echo ">> Pulling images..."
+# shellcheck disable=SC2086
+docker compose pull ${SERVICE_LIST[*]}
 
 echo ">> Migrating legacy image volumes (one-time safe merge)..."
 "${ROOT_DIR}/scripts/migrate-image-volumes.sh"
 
 echo ">> Starting / updating containers..."
-docker compose up -d --remove-orphans
+# shellcheck disable=SC2086
+docker compose up -d --remove-orphans ${SERVICE_LIST[*]}
 
 echo ">> Waiting for core health checks..."
 failed=0
@@ -97,10 +119,14 @@ wait_for() {
   return 1
 }
 
-wait_for api "http://localhost:9092/actuator/health" 30 10 || true
-wait_for pdf "http://localhost:9092/pdfgenerator/actuator/health" 30 10 || true
-wait_for portal "http://localhost:8080/healthz" 20 5 || true
-wait_for website "http://127.0.0.1:3000/" 20 5 || true
+for svc in "${SERVICE_LIST[@]}"; do
+  case "${svc}" in
+    api) wait_for api "http://localhost:9092/actuator/health" 30 10 || true ;;
+    pdf) wait_for pdf "http://localhost:9092/pdfgenerator/actuator/health" 30 10 || true ;;
+    portal) wait_for portal "http://localhost:8080/healthz" 20 5 || true ;;
+    website) wait_for website "http://127.0.0.1:3000/" 20 5 || true ;;
+  esac
+done
 
 if [[ "${failed}" -eq 1 ]]; then
   echo ">> Deployment health checks failed."
@@ -117,7 +143,9 @@ docker compose exec -T nginx nginx -s reload 2>/dev/null || docker compose resta
 echo ">> Pruning dangling images..."
 docker image prune -f
 
-echo ">> Verifying MongoDB, Redis, and shared images..."
-"${ROOT_DIR}/scripts/verify-datastores.sh"
+if [[ "${DEPLOY_SERVICES}" == "portal,website,api,pdf" ]]; then
+  echo ">> Verifying MongoDB, Redis, and shared images..."
+  "${ROOT_DIR}/scripts/verify-datastores.sh"
+fi
 
 echo ">> Deployment complete."
