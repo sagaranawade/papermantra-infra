@@ -46,7 +46,7 @@ fi
 mkdir -p certbot/conf certbot/www
 
 echo ">> Ensuring dummy certificates exist (nginx needs these for :443 blocks)..."
-"${SCRIPT_DIR}/create-dummy-certs.sh"
+bash "${SCRIPT_DIR}/create-dummy-certs.sh"
 
 echo ">> Starting nginx..."
 docker compose up -d nginx
