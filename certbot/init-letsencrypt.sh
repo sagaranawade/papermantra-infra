@@ -45,28 +45,11 @@ fi
 
 mkdir -p certbot/conf certbot/www
 
-echo ">> Creating dummy certificates so nginx can start..."
-for domain in "${domains[@]}"; do
-  path="./certbot/conf/live/${domain}"
-  mkdir -p "${path}"
-  if [[ ! -f "${path}/fullchain.pem" ]]; then
-    openssl req -x509 -nodes -newkey rsa:${rsa_key_size} -days 1 \
-      -keyout "${path}/privkey.pem" \
-      -out "${path}/fullchain.pem" \
-      -subj "/CN=${domain}" 2>/dev/null
-  fi
-done
+echo ">> Ensuring dummy certificates exist (nginx needs these for :443 blocks)..."
+"${SCRIPT_DIR}/create-dummy-certs.sh"
 
-echo ">> Starting nginx with dummy certs..."
+echo ">> Starting nginx..."
 docker compose up -d nginx
-
-echo ">> Deleting dummy certificates..."
-for domain in "${domains[@]}"; do
-  docker compose --profile certbot run --rm --entrypoint "\
-    rm -Rf /etc/letsencrypt/live/${domain} && \
-    rm -Rf /etc/letsencrypt/archive/${domain} && \
-    rm -f /etc/letsencrypt/renewal/${domain}.conf" certbot
-done
 
 echo ">> Requesting real certificates from Let's Encrypt..."
 for domain in "${domains[@]}"; do
