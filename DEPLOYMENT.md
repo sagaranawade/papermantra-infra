@@ -307,27 +307,47 @@ echo YOUR_GITHUB_PAT_WITH_read_packages | docker login ghcr.io -u sagaranawade -
 
 ---
 
-## Phase 4 — Cloudflare DNS (before SSL)
+## Phase 4 — DNS (before SSL)
 
-In Cloudflare for **papermantra.com** and **neelmind.com**:
+**Current setup:** domains use Hostinger nameservers (`ns1.dns-parking.com`, `ns2.dns-parking.com`).  
+Nginx on the VPS already serves both `papermantra.com` and `www.papermantra.com`; the usual failure mode is DNS still pointing the apex at Hostinger parking (`2.57.91.91`) instead of the VPS.
+
+### Hostinger hPanel (DNS Zone Editor)
+
+For **papermantra.com** in [hPanel → Domains → DNS / DNS Zone](https://hpanel.hostinger.com/domains):
+
+| Type | Name | Points to | TTL |
+|------|------|-----------|-----|
+| A | `@` | `187.127.189.114` | 14400 |
+| CNAME | `www` | `papermantra.com` | 14400 |
+| A | `api` | `187.127.189.114` | 14400 |
+| A | `pdf` | `187.127.189.114` | 14400 |
+
+Repeat `@` + `www` for **neelmind.com** (same VPS IP).
+
+**Symptom:** `papermantra.com` shows a Hostinger “Parked Domain” page while `api.papermantra.com` works — the `@` A record is wrong. Update it to the VPS IP; `www` CNAME will follow automatically.
+
+Verify after 5–15 minutes:
+
+```bash
+./scripts/verify-dns.sh
+# or manually:
+dig +short papermantra.com @ns1.dns-parking.com
+dig +short www.papermantra.com @ns1.dns-parking.com
+```
+
+### Optional — Cloudflare
+
+If you later move nameservers to Cloudflare, use the same A/CNAME values:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
 | A | `@` | VPS_IP | Proxied (orange) |
-| A | `www` | VPS_IP | Proxied |
+| CNAME | `www` | `papermantra.com` | Proxied |
 | A | `api` | VPS_IP | Proxied |
 | A | `pdf` | VPS_IP | Proxied |
 
-Repeat for **neelmind.com** (`@` and `www`).
-
-Wait 5–15 minutes for DNS propagation, then verify:
-
-```bash
-dig +short papermantra.com
-dig +short api.papermantra.com
-```
-
-### Cloudflare SSL mode
+### Cloudflare SSL mode (only when using Cloudflare proxy)
 
 1. SSL/TLS → Overview → set **Full (strict)** *after* Let's Encrypt certs exist  
 2. For first Certbot run, temporarily use **Full** or **DNS only** (grey cloud) if HTTP-01 fails behind proxy
