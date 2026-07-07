@@ -109,6 +109,19 @@ jobs:
 
             DEPLOY_SERVICES="portal,website,api,pdf"
 
+            if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
+              if [[ "${{ github.event_name }}" == "push" ]]; then
+                DETECTED="$(./scripts/resolve-deploy-services.sh)"
+                if [[ -n "${DETECTED}" ]]; then
+                  DEPLOY_SERVICES="${DETECTED}"
+                  echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
+                fi
+              elif [[ "${{ github.event.inputs.deploy_service }}" != "all" && -n "${{ github.event.inputs.deploy_service }}" ]]; then
+                DEPLOY_SERVICES="${{ github.event.inputs.deploy_service }}"
+                echo ">> Manual deploy limited to: ${DEPLOY_SERVICES}"
+              fi
+            fi
+
             if [[ -n "${PIN_TAG}" ]]; then
               if [[ "${PIN_ALL}" == "true" ]]; then
                 echo "Unified release: pinning all IMAGE_* to ${PIN_TAG}"
