@@ -99,10 +99,17 @@ jobs:
               exit 1
             fi
 
+            chmod +x scripts/*.sh certbot/*.sh
+            echo ">> Recording pre-deploy image tags (for rollback)..."
+            TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+            {
+              echo "# ${TIMESTAMP}"
+              grep '^IMAGE_' .env || true
+            } >> .deploy-history
+
             DEPLOY_SERVICES="portal,website,api,pdf"
 
             if [[ -n "${PIN_TAG}" ]]; then
-              chmod +x scripts/pin-image-tag.sh
               if [[ "${PIN_ALL}" == "true" ]]; then
                 echo "Unified release: pinning all IMAGE_* to ${PIN_TAG}"
                 ./scripts/pin-image-tag.sh "${PIN_TAG}" --all
@@ -128,7 +135,6 @@ jobs:
               echo "WARN: GHCR_TOKEN secret not set — assuming docker login already configured on VPS"
             fi
 
-            chmod +x scripts/*.sh certbot/*.sh
             echo "Deploy triggered by: ${SOURCE} (services: ${DEPLOY_SERVICES})"
             export DEPLOY_SERVICES
             ./scripts/deploy.sh --rollback-on-failure

@@ -32,15 +32,6 @@ fi
 touch "${LOCK_FILE}"
 trap 'rm -f "${LOCK_FILE}"' EXIT
 
-HISTORY_FILE=".deploy-history"
-TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
-
-echo ">> Recording current image tags..."
-{
-  echo "# ${TIMESTAMP}"
-  grep '^IMAGE_' .env || true
-} >> "${HISTORY_FILE}"
-
 DEPLOY_SERVICES="${DEPLOY_SERVICES:-portal,website,api,pdf}"
 IFS=',' read -r -a SERVICE_LIST <<< "${DEPLOY_SERVICES}"
 
