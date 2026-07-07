@@ -245,13 +245,24 @@ App repos can trigger an infra redeploy after pushing images:
 
 Each application repo owns **code + Dockerfile.prod + CI/CD**. This repo owns **orchestration only**. Prod releases trigger infra deploy via `INFRA_DISPATCH_TOKEN`.
 
-## Cloudflare (Phase 7)
+## Cloudflare DNS
 
-Before running Certbot:
+**Full migration guide:** **[CLOUDFLARE-MIGRATION.md](./CLOUDFLARE-MIGRATION.md)**
 
-1. Create A records for all domains → VPS public IP
+BIND zone templates for import: `cloudflare/papermantra.com.zone`, `cloudflare/neelmind.com.zone`
+
+After migration:
+
+```bash
+./scripts/verify-cloudflare-ns.sh
+./scripts/verify-dns.sh
+```
+
+Before running Certbot (if certs not yet issued):
+
+1. Create A records for all domains → VPS public IP (DNS only / grey cloud)
 2. Set SSL/TLS mode to **Full (strict)** after certificates are issued
-3. Enable proxy (orange cloud) for DDoS protection; Certbot still works via HTTP-01 on port 80
+3. Optional: enable proxy (orange cloud) for DDoS protection after DNS is stable
 
 ## Troubleshooting
 

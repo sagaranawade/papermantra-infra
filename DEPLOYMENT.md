@@ -307,50 +307,41 @@ echo YOUR_GITHUB_PAT_WITH_read_packages | docker login ghcr.io -u sagaranawade -
 
 ---
 
-## Phase 4 — DNS (before SSL)
+## Phase 4 — DNS (Cloudflare — recommended)
 
-**Current setup:** domains use Hostinger nameservers (`ns1.dns-parking.com`, `ns2.dns-parking.com`).  
-Nginx on the VPS already serves both `papermantra.com` and `www.papermantra.com`; the usual failure mode is DNS still pointing the apex at Hostinger parking (`2.57.91.91`) instead of the VPS.
+**Recommended:** manage DNS in **Cloudflare** (not Hostinger `dns-parking.com`). Hostinger parking nameservers intermittently serve `2.57.91.91` even when hPanel shows the correct A record.
 
-### Hostinger hPanel (DNS Zone Editor)
+**Step-by-step guide:** **[CLOUDFLARE-MIGRATION.md](./CLOUDFLARE-MIGRATION.md)** — covers both `papermantra.com` and `neelmind.com`, including neelmind email (MX/SPF/DKIM).
 
-For **papermantra.com** in [hPanel → Domains → DNS / DNS Zone](https://hpanel.hostinger.com/domains):
+Quick record summary (VPS IP `187.127.189.114`, start with **DNS only** / grey cloud):
 
-| Type | Name | Points to | TTL |
-|------|------|-----------|-----|
-| A | `@` | `187.127.189.114` | 14400 |
-| CNAME | `www` | `papermantra.com` | 14400 |
-| A | `api` | `187.127.189.114` | 14400 |
-| A | `pdf` | `187.127.189.114` | 14400 |
+**papermantra.com**
 
-Repeat `@` + `www` for **neelmind.com** (same VPS IP).
+| Type | Name | Content |
+|------|------|---------|
+| A | `@` | `187.127.189.114` |
+| CNAME | `www` | `papermantra.com` |
+| A | `api` | `187.127.189.114` |
+| A | `pdf` | `187.127.189.114` |
 
-**Symptom:** `papermantra.com` shows a Hostinger “Parked Domain” page while `api.papermantra.com` works — the `@` A record is wrong. Update it to the VPS IP; `www` CNAME will follow automatically.
+**neelmind.com** — same `@` + `www`, plus copy MX/SPF/DKIM from Hostinger before changing nameservers.
 
-Verify after 5–15 minutes:
+After nameservers point to Cloudflare:
 
 ```bash
+./scripts/verify-cloudflare-ns.sh
 ./scripts/verify-dns.sh
-# or manually:
-dig +short papermantra.com @ns1.dns-parking.com
-dig +short www.papermantra.com @ns1.dns-parking.com
 ```
 
-### Optional — Cloudflare
+### Cloudflare SSL
 
-If you later move nameservers to Cloudflare, use the same A/CNAME values:
+1. SSL/TLS → Overview → **Full (strict)** (after Let's Encrypt certs exist on VPS)  
+2. First migration: keep records **DNS only** (grey cloud); enable orange-cloud proxy later if desired  
+3. If Certbot renewal fails behind proxy, set records to DNS only, run `./certbot/renew.sh`, re-enable proxy
 
-| Type | Name | Content | Proxy |
-|------|------|---------|-------|
-| A | `@` | VPS_IP | Proxied (orange) |
-| CNAME | `www` | `papermantra.com` | Proxied |
-| A | `api` | VPS_IP | Proxied |
-| A | `pdf` | VPS_IP | Proxied |
+### Legacy — Hostinger DNS only (not recommended)
 
-### Cloudflare SSL mode (only when using Cloudflare proxy)
-
-1. SSL/TLS → Overview → set **Full (strict)** *after* Let's Encrypt certs exist  
-2. For first Certbot run, temporarily use **Full** or **DNS only** (grey cloud) if HTTP-01 fails behind proxy
+If you must stay on Hostinger nameservers, edit A records in hPanel. This does **not** fix intermittent parking when using `dns-parking.com` NS.
 
 ---
 

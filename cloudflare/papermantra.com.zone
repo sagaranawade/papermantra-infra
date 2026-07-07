@@ -1,0 +1,8 @@
+; Import into Cloudflare: DNS → Records → Import and Export → Import DNS records
+; papermantra.com — web only (no email on this domain)
+; Proxy: set all to DNS only (grey cloud) on first migration
+
+@       300 IN A     187.127.189.114
+www     300 IN CNAME papermantra.com.
+api     300 IN A     187.127.189.114
+pdf     300 IN A     187.127.189.114

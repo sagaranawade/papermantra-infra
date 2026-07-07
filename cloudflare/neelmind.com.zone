@@ -1,0 +1,12 @@
+; Import into Cloudflare: DNS → Records → Import and Export → Import DNS records
+; neelmind.com — website + Hostinger Mail
+; Verify DKIM value against hPanel export before importing.
+; Proxy: set A/CNAME to DNS only (grey cloud); never proxy MX.
+
+@       300 IN A     187.127.189.114
+www     300 IN CNAME neelmind.com.
+@       300 IN MX    5 mx1.hostinger.com.
+@       300 IN MX    10 mx2.hostinger.com.
+@       300 IN TXT   "v=spf1 include:_spf.mail.hostinger.com ~all"
+_dmarc  300 IN TXT   "v=DMARC1; p=none"
+hostingermail-a._domainkey 300 IN TXT "v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs+RijpkYCOFcf5HdHXcwSJJdaqCIf9jyybiM8GFNhzhQMYKXmKGefVdmAIaqcKstjtkCMktZRl6uqrd+gnAsslRoEOtfBbWuqtL/1NRovLakhLngQQChKrJQ1EIgbBBtQyJVN3+m/d6Bzq/xSJKqZjyX2LYwJArwZSpp3JoKp0X7JrzYSXCH312/WSv8htE/cHZ+K7PYJYRmu2CzeNUhh/pJr7liC6nrvWmJCfRAov5g8lAJPR9dKH/EvtCBiMk+sC8fv8395CEmQaOHMj54XCH9fYYHx9qxK4IfsbnvN3jYv+Rel6nSgluaapSwEll0Rl+YBY71bieyV0ZY2lrJ2wIDAQAB"

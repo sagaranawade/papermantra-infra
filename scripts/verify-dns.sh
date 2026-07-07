@@ -12,6 +12,8 @@ if [[ -f .env ]]; then
 fi
 
 EXPECTED_IP="${1:-187.127.189.114}"
+HOSTINGER_PARKING_IP="2.57.91.91"
+HOSTINGER_ALT_PARKING_IP="75.2.60.5"
 FAIL=0
 
 resolve_a() {
@@ -29,6 +31,11 @@ check_host() {
     echo "OK  ${host} -> ${ip}"
   else
     echo "FAIL ${host} -> ${ip:-<no A record>} (expected ${EXPECTED_IP})"
+    if [[ "${ip}" == "${HOSTINGER_PARKING_IP}" ]]; then
+      echo "     ^ Hostinger parked-domain IP. Migrate DNS to Cloudflare (see CLOUDFLARE-MIGRATION.md)"
+    elif [[ "${ip}" == "${HOSTINGER_ALT_PARKING_IP}" ]]; then
+      echo "     ^ Hostinger alternate parking IP. Set A @ to ${EXPECTED_IP} or use Cloudflare"
+    fi
     FAIL=1
   fi
 }
