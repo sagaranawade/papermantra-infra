@@ -24,7 +24,7 @@ REGISTRY="${REGISTRY:-ghcr.io}"
 OWNER="${REGISTRY_OWNER:-sagaranawade}"
 
 case "${KEY}" in
-  IMAGE_PAPERMANTRA)  BASE="${REGISTRY}/${OWNER}/papermantra-web" ;;
+  IMAGE_PAPERMANTRA)  BASE="${REGISTRY}/${OWNER}/papermantra" ;;
   IMAGE_ROBOFUME)     BASE="${REGISTRY}/${OWNER}/robofume" ;;
   IMAGE_SERVICES)     BASE="${REGISTRY}/${OWNER}/papermantraservices" ;;
   IMAGE_PDF)          BASE="${REGISTRY}/${OWNER}/pdf-generator" ;;
