@@ -21,6 +21,7 @@ on:
     branches: [main]
     paths:
       - 'docker-compose*.yml'
+      - '.env'
       - 'nginx/**'
       - 'certbot/**'
       - 'scripts/**'
