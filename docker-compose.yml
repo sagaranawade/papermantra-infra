@@ -71,6 +71,8 @@ services:
     image: ${IMAGE_ROBOFUME}
     container_name: robofume-website
     restart: unless-stopped
+    environment:
+      INTERNAL_API_ORIGIN: http://api:9091
     expose:
       - "3000"
     networks:
