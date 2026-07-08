@@ -79,7 +79,7 @@ jobs:
 
           if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
             if [[ "${EVENT_NAME}" == "push" ]]; then
-              DETECTED="$(./scripts/resolve-deploy-services.sh)"
+              DETECTED="$(bash ./scripts/resolve-deploy-services.sh)"
               if [[ -n "${DETECTED}" ]]; then
                 SERVICES="${DETECTED}"
               fi
