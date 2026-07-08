@@ -65,6 +65,45 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve deploy services
+        id: resolve
+        run: |
+          set -euo pipefail
+          SOURCE="${{ github.event.client_payload.source || 'manual' }}"
+          PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}"
+          PIN_ALL="${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}"
+          EVENT_NAME="${{ github.event_name }}"
+          DEPLOY_SERVICE_INPUT="${{ github.event.inputs.deploy_service || 'all' }}"
+
+          SERVICES="portal,website,api,pdf"
+
+          if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
+            if [[ "${EVENT_NAME}" == "push" ]]; then
+              DETECTED="$(./scripts/resolve-deploy-services.sh)"
+              if [[ -n "${DETECTED}" ]]; then
+                SERVICES="${DETECTED}"
+              fi
+            elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+              SERVICES="${DEPLOY_SERVICE_INPUT}"
+            fi
+          elif [[ -n "${PIN_TAG}" ]]; then
+            if [[ "${PIN_ALL}" == "true" ]]; then
+              SERVICES="portal,website,api,pdf"
+            elif [[ "${SOURCE}" != "manual" ]]; then
+              case "${SOURCE}" in
+                papermantra) SERVICES="portal" ;;
+                robofume) SERVICES="website" ;;
+                papermantraservices) SERVICES="api" ;;
+                pdfgenerator) SERVICES="pdf" ;;
+              esac
+            elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+              SERVICES="${DEPLOY_SERVICE_INPUT}"
+            fi
+          fi
+
+          echo "services=${SERVICES}" >> "${GITHUB_OUTPUT}"
+          echo "Smoke tests will target: ${SERVICES}"
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -155,24 +194,42 @@ jobs:
       - name: Smoke tests
         run: |
           set -euo pipefail
-          urls=(
-            "https://papermantra.com/healthz"
-            "https://www.neelmind.com/"
-            "https://api.papermantra.com/papermantra/actuator/health"
-            "https://pdf.papermantra.com/pdfgenerator/actuator/health"
+          SERVICES="${{ steps.resolve.outputs.services }}"
+
+          declare -A URLS=(
+            ["portal"]="https://papermantra.com/healthz"
+            ["website"]="https://www.neelmind.com/"
+            ["api"]="https://api.papermantra.com/papermantra/actuator/health"
+            ["pdf"]="https://pdf.papermantra.com/pdfgenerator/actuator/health"
           )
-          for url in "${urls[@]}"; do
-            echo "Checking ${url}..."
-            for i in 1 2 3 4 5 6; do
+
+          IFS=',' read -r -a SVC_ARRAY <<< "${SERVICES}"
+          for svc in "${SVC_ARRAY[@]}"; do
+            svc="$(echo "${svc}" | xargs)"
+            url="${URLS[$svc]:-}"
+            if [[ -z "${url}" ]]; then
+              echo "Skipping unknown service: ${svc}"
+              continue
+            fi
+
+            attempts=6
+            sleep_secs=15
+            if [[ "${svc}" == "pdf" ]]; then
+              attempts=12
+              sleep_secs=15
+            fi
+
+            echo "Checking ${svc} (${url})..."
+            for i in $(seq 1 "${attempts}"); do
               if curl -fsS "${url}" >/dev/null; then
                 echo "  OK"
                 break
               fi
-              if [[ "${i}" -eq 6 ]]; then
-                echo "  FAILED after 6 attempts"
+              if [[ "${i}" -eq "${attempts}" ]]; then
+                echo "  FAILED after ${attempts} attempts"
                 exit 1
               fi
-              sleep 15
+              sleep "${sleep_secs}"
             done
           done
 
