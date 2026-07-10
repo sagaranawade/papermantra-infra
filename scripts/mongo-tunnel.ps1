@@ -6,10 +6,11 @@
   Mongo is NOT published on the VPS host (backend Docker network only).
   This script:
     1. Reads VPS SSH settings from scripts/sync-data.config
-    2. Starts a temporary socat helper on the VPS bound to 127.0.0.1:27017
-       (joins the compose backend network and forwards to papermantra-mongodb)
-    3. Opens local tunnel: localhost:<LocalPort> -> VPS 127.0.0.1:27017
-    4. Removes the helper when the tunnel stops (Ctrl+C)
+    2. Resolves the Mongo container IP on the compose backend network
+    3. Opens local tunnel: localhost:<LocalPort> -> VPS <mongo-ip>:27017
+       (SSH forwards through the VPS into the Docker backend network)
+
+  No extra Docker images (socat) are required on the VPS.
 
   Keep this window open while Compass / mongosh / IntelliJ are connected.
 
@@ -24,9 +25,7 @@ param(
     [int] $LocalPort = 27018,
     [string] $ConfigPath = "",
     [string] $MongoContainer = "papermantra-mongodb",
-    [string] $DockerNetwork = "papermantra_backend",
-    [string] $HelperName = "mongo-ssh-tunnel-helper",
-    [int] $VpsLocalPort = 27017,
+    [string] $DockerNetwork = "",
     [switch] $PrintOnly
 )
 
@@ -64,7 +63,7 @@ function Read-DotEnvValue([string] $envPath, [string] $key) {
 }
 
 function Invoke-Vps([string[]] $sshArgs, [string] $remoteCommand) {
-    # Normalize to LF so PowerShell CRLF heredocs / multiline strings never break remote bash.
+    # Normalize to LF so PowerShell CRLF never breaks remote bash.
     $normalized = ($remoteCommand -replace "`r`n", "`n" -replace "`r", "`n").Trim()
     $output = & ssh @sshArgs $normalized 2>&1
     $text = ($output | Out-String).Trim()
@@ -72,6 +71,35 @@ function Invoke-Vps([string[]] $sshArgs, [string] $remoteCommand) {
         throw "Remote SSH command failed (exit $LASTEXITCODE): $normalized`n$text"
     }
     return $text
+}
+
+function Resolve-MongoEndpoint([string[]] $sshArgs, [string] $container, [string] $preferredNetwork) {
+    $format = '{{range $k, $v := .NetworkSettings.Networks}}{{if $v.IPAddress}}{{$k}}={{$v.IPAddress}}{{println}}{{end}}{{end}}'
+    $lines = Invoke-Vps $sshArgs "docker inspect -f '$format' $container"
+
+    $endpoints = @()
+    foreach ($line in ($lines -split "`n")) {
+        $line = $line.Trim()
+        if (-not $line) { continue }
+        $parts = $line.Split("=", 2)
+        if ($parts.Count -eq 2 -and $parts[1] -match '^\d+\.\d+\.\d+\.\d+$') {
+            $endpoints += @{ Network = $parts[0]; Ip = $parts[1] }
+        }
+    }
+
+    if ($endpoints.Count -eq 0) {
+        throw "Could not resolve Mongo container IP for '$container'. Is it attached to a Docker network?"
+    }
+
+    if ($preferredNetwork) {
+        $match = $endpoints | Where-Object { $_.Network -eq $preferredNetwork } | Select-Object -First 1
+        if ($match) { return $match }
+    }
+
+    $backend = $endpoints | Where-Object { $_.Network -like '*_backend' } | Select-Object -First 1
+    if ($backend) { return $backend }
+
+    return $endpoints[0]
 }
 
 $config = Read-Config $ConfigPath
@@ -83,6 +111,12 @@ $vpsPath = if ($config["VPS_PATH"]) { $config["VPS_PATH"] } else { "/opt/paperma
 if (-not $vpsHost) { throw "VPS_HOST missing in $ConfigPath" }
 if (-not $sshKey -or -not (Test-Path $sshKey)) {
     throw "SSH_KEY missing or not found: $sshKey"
+}
+
+if (-not $DockerNetwork) {
+    $composeProject = Read-DotEnvValue (Join-Path (Split-Path $PSScriptRoot -Parent) ".env") "COMPOSE_PROJECT_NAME"
+    if (-not $composeProject) { $composeProject = "papermantra" }
+    $DockerNetwork = "${composeProject}_backend"
 }
 
 $envFile = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
@@ -117,6 +151,11 @@ if ($running -ne "true") {
     throw "Container '$MongoContainer' is not running on the VPS."
 }
 
+Write-Host "Resolving Mongo IP on Docker network..." -ForegroundColor Cyan
+$endpoint = Resolve-MongoEndpoint $sshArgs $MongoContainer $DockerNetwork
+$mongoIp = $endpoint.Ip
+$dockerNetwork = $endpoint.Network
+
 $uri = "mongodb://${mongoUser}:****@127.0.0.1:${LocalPort}/${mongoDb}?authSource=admin"
 $uriFull = $null
 if ($mongoPass) {
@@ -128,7 +167,8 @@ Write-Host ""
 Write-Host "=== Prod Mongo SSH tunnel ===" -ForegroundColor Green
 Write-Host "SSH:            ${vpsUser}@${vpsHost}"
 Write-Host "Container:      $MongoContainer"
-Write-Host "Docker network: $DockerNetwork"
+Write-Host "Docker network: $dockerNetwork"
+Write-Host "Container IP:   $mongoIp"
 Write-Host "Local bind:     127.0.0.1:$LocalPort"
 Write-Host "Auth DB:        admin"
 Write-Host "Username:       $mongoUser"
@@ -164,54 +204,16 @@ if ($PrintOnly) {
     exit 0
 }
 
-# Bind helper only on VPS loopback so Mongo is never exposed publicly.
-# Must be a SINGLE line: Windows CRLF + bash "\" continuations become "alpine/socat\r"
-# which Docker rejects with "invalid reference format".
-$startHelper = (
-    "docker rm -f $HelperName >/dev/null 2>&1 || true; " +
-    "docker run -d --rm --name $HelperName " +
-    "--network $DockerNetwork " +
-    "-p 127.0.0.1:${VpsLocalPort}:27017 " +
-    "alpine/socat " +
-    "TCP-LISTEN:27017,fork,reuseaddr TCP:${MongoContainer}:27017"
+Write-Host "Opening tunnel (Ctrl+C to stop)..." -ForegroundColor Cyan
+Write-Host "ssh -N -L ${LocalPort}:${mongoIp}:27017 ${vpsUser}@${vpsHost}"
+& ssh @(
+    "-i", $sshKey,
+    "-o", "IdentitiesOnly=yes",
+    "-o", "BatchMode=yes",
+    "-o", "ExitOnForwardFailure=yes",
+    "-o", "ServerAliveInterval=30",
+    "-o", "ServerAliveCountMax=3",
+    "-N",
+    "-L", "${LocalPort}:${mongoIp}:27017",
+    "${vpsUser}@${vpsHost}"
 )
-
-Write-Host "Starting temporary VPS helper ($HelperName) on 127.0.0.1:$VpsLocalPort ..." -ForegroundColor Cyan
-try {
-    Invoke-Vps $sshArgs $startHelper | Out-Null
-} catch {
-    Write-Host "Helper start failed with network '$DockerNetwork'. Listing Docker networks..." -ForegroundColor Yellow
-    try { Invoke-Vps $sshArgs "docker network ls" | Write-Host } catch { }
-    throw
-}
-
-$helperOk = $false
-try {
-    Start-Sleep -Seconds 1
-    $helperRunning = Invoke-Vps $sshArgs "docker inspect -f '{{.State.Running}}' $HelperName"
-    if ($helperRunning -ne "true") {
-        throw "Helper container '$HelperName' did not start."
-    }
-    $helperOk = $true
-
-    Write-Host "Opening tunnel (Ctrl+C to stop)..." -ForegroundColor Cyan
-    Write-Host "ssh -N -L ${LocalPort}:127.0.0.1:${VpsLocalPort} ${vpsUser}@${vpsHost}"
-    & ssh @(
-        "-i", $sshKey,
-        "-o", "IdentitiesOnly=yes",
-        "-o", "BatchMode=yes",
-        "-o", "ExitOnForwardFailure=yes",
-        "-o", "ServerAliveInterval=30",
-        "-o", "ServerAliveCountMax=3",
-        "-N",
-        "-L", "${LocalPort}:127.0.0.1:${VpsLocalPort}",
-        "${vpsUser}@${vpsHost}"
-    )
-}
-finally {
-    if ($helperOk) {
-        Write-Host ""
-        Write-Host "Cleaning up VPS helper ($HelperName)..." -ForegroundColor Cyan
-        & ssh @sshArgs "docker rm -f $HelperName >/dev/null 2>&1 || true" | Out-Null
-    }
-}
