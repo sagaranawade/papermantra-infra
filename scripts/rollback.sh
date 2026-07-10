@@ -45,7 +45,40 @@ rm -f .env.bak
 echo ">> Pulling rolled-back images..."
 docker compose pull
 
-echo ">> Restarting stack..."
-docker compose up -d --remove-orphans
+echo ">> Restarting core services..."
+docker compose up -d --remove-orphans mongodb redis nginx portal website
+
+echo ">> Starting API and waiting for health..."
+docker compose up -d api
+api_ok=0
+for i in $(seq 1 30); do
+  if docker compose exec -T api sh -c "wget -qO- http://localhost:9092/actuator/health >/dev/null 2>&1 || curl -fsS http://localhost:9092/actuator/health >/dev/null 2>&1"; then
+    echo "   api is healthy (attempt ${i})"
+    api_ok=1
+    break
+  fi
+  echo "   api not ready yet (${i}/30)..."
+  sleep 10
+done
+if [[ "${api_ok}" -ne 1 ]]; then
+  echo "ERROR: API did not become healthy during rollback."
+  docker compose logs --tail 80 api 2>&1 || true
+  exit 1
+fi
+
+echo ">> Starting PDF (depends on healthy API)..."
+docker compose up -d pdf
+for i in $(seq 1 20); do
+  if docker compose exec -T pdf sh -c "curl -fsS http://localhost:9092/pdfgenerator/actuator/health >/dev/null 2>&1"; then
+    echo "   pdf is healthy (attempt ${i})"
+    break
+  fi
+  if [[ "${i}" -eq 20 ]]; then
+    echo "WARN: PDF health check did not pass during rollback."
+    docker compose logs --tail 80 pdf 2>&1 || true
+  fi
+  echo "   pdf not ready yet (${i}/20)..."
+  sleep 10
+done
 
 echo ">> Rollback complete."

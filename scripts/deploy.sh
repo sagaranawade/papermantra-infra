@@ -142,6 +142,14 @@ for svc in "${SERVICE_LIST[@]}"; do
   esac
 done
 
+# PDF depends on a healthy API. API-only deploys must still (re)start PDF or it can
+# stay down after a failed rollback when the API was unhealthy.
+if [[ ",${DEPLOY_SERVICES}," == *",api,"* ]] && [[ ",${DEPLOY_SERVICES}," != *",pdf,"* ]]; then
+  echo ">> Ensuring PDF service is running (depends on API)..."
+  docker compose up -d pdf
+  wait_for pdf "http://localhost:9092/pdfgenerator/actuator/health" 20 10 || true
+fi
+
 if [[ "${failed}" -eq 1 ]]; then
   echo ">> Deployment health checks failed."
   if [[ "${ROLLBACK_ON_FAILURE}" -eq 1 ]]; then
