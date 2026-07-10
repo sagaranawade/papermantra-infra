@@ -55,11 +55,20 @@ env:
 jobs:
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    # Set repo variable DEPLOY_RUNNER=self-hosted after installing the runner
+    # (scripts/install-github-runner.sh) to avoid GitHub→VPS SSH timeouts permanently.
+    runs-on: ${{ vars.DEPLOY_RUNNER == 'self-hosted' && fromJson('["self-hosted", "papermantra-prod"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     environment:
       name: production
       url: https://papermantra.com
+
+    env:
+      CI_PIN_TAG: ${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}
+      CI_PIN_ALL: ${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}
+      CI_SOURCE: ${{ github.event.client_payload.source || 'manual' }}
+      CI_EVENT_NAME: ${{ github.event_name }}
+      CI_DEPLOY_SERVICE: ${{ github.event.inputs.deploy_service || 'all' }}
 
     steps:
       - name: Checkout
@@ -104,7 +113,20 @@ jobs:
           echo "services=${SERVICES}" >> "${GITHUB_OUTPUT}"
           echo "Smoke tests will target: ${SERVICES}"
 
-      - name: Deploy via SSH
+      - name: Deploy on VPS (self-hosted runner)
+        if: vars.DEPLOY_RUNNER == 'self-hosted'
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          bash "${DEPLOY_PATH}/scripts/ci-deploy.sh"
+
+      - name: Deploy via SSH (attempt 1)
+        if: vars.DEPLOY_RUNNER != 'self-hosted'
+        id: ssh_deploy_1
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.2.0
         env:
           GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
@@ -113,79 +135,92 @@ jobs:
           host: ${{ secrets.PROD_SSH_HOST }}
           username: ${{ secrets.PROD_SSH_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          timeout: 300s
-          envs: GHCR_PAT,GHCR_USER
+          port: 22
+          timeout: 120s
+          command_timeout: 30m
+          envs: GHCR_PAT,GHCR_USER,CI_PIN_TAG,CI_PIN_ALL,CI_SOURCE,CI_EVENT_NAME,CI_DEPLOY_SERVICE
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
-            PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}"
-            PIN_ALL="${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}"
-            SOURCE="${{ github.event.client_payload.source || 'manual' }}"
-
-            if [[ ! -d "${DEPLOY_PATH}" ]]; then
-              echo "Cloning infra repo to ${DEPLOY_PATH}..."
-              sudo mkdir -p "$(dirname "${DEPLOY_PATH}")"
-              sudo git clone https://github.com/${{ github.repository }}.git "${DEPLOY_PATH}"
-              sudo chown -R "$(whoami):$(whoami)" "${DEPLOY_PATH}"
-            fi
-
+            export DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
             cd "${DEPLOY_PATH}"
             git fetch origin main
             git reset --hard origin/main
-
-            if [[ ! -f .env ]]; then
-              echo "ERROR: ${DEPLOY_PATH}/.env is missing. Run git pull origin main (config is committed on main)."
-              exit 1
-            fi
-
             chmod +x scripts/*.sh certbot/*.sh
-            echo ">> Recording pre-deploy image tags (for rollback)..."
-            ./scripts/record-deploy-snapshot.sh
+            export CI_PIN_TAG="${CI_PIN_TAG}"
+            export CI_PIN_ALL="${CI_PIN_ALL}"
+            export CI_SOURCE="${CI_SOURCE}"
+            export CI_EVENT_NAME="${CI_EVENT_NAME}"
+            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
+            ./scripts/ci-deploy.sh
 
-            DEPLOY_SERVICES="portal,website,api,pdf"
+      - name: Deploy via SSH (attempt 2)
+        if: vars.DEPLOY_RUNNER != 'self-hosted' && steps.ssh_deploy_1.outcome == 'failure'
+        id: ssh_deploy_2
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          timeout: 120s
+          command_timeout: 30m
+          envs: GHCR_PAT,GHCR_USER,CI_PIN_TAG,CI_PIN_ALL,CI_SOURCE,CI_EVENT_NAME,CI_DEPLOY_SERVICE
+          script: |
+            sleep 45
+            set -euo pipefail
+            export DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+            cd "${DEPLOY_PATH}"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x scripts/*.sh certbot/*.sh
+            export CI_PIN_TAG="${CI_PIN_TAG}"
+            export CI_PIN_ALL="${CI_PIN_ALL}"
+            export CI_SOURCE="${CI_SOURCE}"
+            export CI_EVENT_NAME="${CI_EVENT_NAME}"
+            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
+            ./scripts/ci-deploy.sh
 
-            if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
-              if [[ "${{ github.event_name }}" == "push" ]]; then
-                DETECTED="$(./scripts/resolve-deploy-services.sh)"
-                if [[ -n "${DETECTED}" ]]; then
-                  DEPLOY_SERVICES="${DETECTED}"
-                  echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
-                fi
-              elif [[ "${{ github.event.inputs.deploy_service }}" != "all" && -n "${{ github.event.inputs.deploy_service }}" ]]; then
-                DEPLOY_SERVICES="${{ github.event.inputs.deploy_service }}"
-                echo ">> Manual deploy limited to: ${DEPLOY_SERVICES}"
-              fi
-            fi
+      - name: Deploy via SSH (attempt 3)
+        if: vars.DEPLOY_RUNNER != 'self-hosted' && steps.ssh_deploy_1.outcome == 'failure' && steps.ssh_deploy_2.outcome == 'failure'
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          timeout: 120s
+          command_timeout: 30m
+          envs: GHCR_PAT,GHCR_USER,CI_PIN_TAG,CI_PIN_ALL,CI_SOURCE,CI_EVENT_NAME,CI_DEPLOY_SERVICE
+          script: |
+            sleep 90
+            set -euo pipefail
+            export DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+            cd "${DEPLOY_PATH}"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x scripts/*.sh certbot/*.sh
+            export CI_PIN_TAG="${CI_PIN_TAG}"
+            export CI_PIN_ALL="${CI_PIN_ALL}"
+            export CI_SOURCE="${CI_SOURCE}"
+            export CI_EVENT_NAME="${CI_EVENT_NAME}"
+            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
+            ./scripts/ci-deploy.sh
 
-            if [[ -n "${PIN_TAG}" ]]; then
-              if [[ "${PIN_ALL}" == "true" ]]; then
-                echo "Unified release: pinning all IMAGE_* to ${PIN_TAG}"
-                ./scripts/pin-image-tag.sh "${PIN_TAG}" --all
-              elif [[ "${SOURCE}" != "manual" ]]; then
-                echo "Per-service release: pinning ${SOURCE} to ${PIN_TAG}"
-                ./scripts/pin-image-tag.sh "${PIN_TAG}" --source "${SOURCE}"
-                case "${SOURCE}" in
-                  papermantra) DEPLOY_SERVICES="portal" ;;
-                  robofume) DEPLOY_SERVICES="website" ;;
-                  papermantraservices) DEPLOY_SERVICES="api" ;;
-                  pdfgenerator) DEPLOY_SERVICES="pdf" ;;
-                esac
-              elif [[ "${{ github.event.inputs.deploy_service }}" != "all" && -n "${{ github.event.inputs.deploy_service }}" ]]; then
-                echo "Manual single-service pin: ${{ github.event.inputs.deploy_service }} -> ${PIN_TAG}"
-                ./scripts/pin-image-tag.sh "${PIN_TAG}" --service "${{ github.event.inputs.deploy_service }}"
-                DEPLOY_SERVICES="${{ github.event.inputs.deploy_service }}"
-              fi
-            fi
-
-            if [[ -n "${GHCR_PAT:-}" ]]; then
-              echo "${GHCR_PAT}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-            else
-              echo "WARN: GHCR_TOKEN secret not set — assuming docker login already configured on VPS"
-            fi
-
-            echo "Deploy triggered by: ${SOURCE} (services: ${DEPLOY_SERVICES})"
-            export DEPLOY_SERVICES
-            ./scripts/deploy.sh --rollback-on-failure
+      - name: SSH deploy failed — pull-deploy fallback note
+        if: vars.DEPLOY_RUNNER != 'self-hosted' && failure() && (steps.ssh_deploy_1.outcome == 'failure')
+        run: |
+          echo "::warning::GitHub Actions could not SSH to the VPS (port 22 timeout)."
+          echo "If scripts/setup-pull-deploy.sh is installed on the VPS, main-branch"
+          echo "changes (including .env image pins) will auto-deploy within ~2 minutes."
+          echo "Permanent fix: install the self-hosted runner (scripts/install-github-runner.sh)"
+          echo "and set repo variable DEPLOY_RUNNER=self-hosted."
 
       - name: Smoke tests
         run: |
