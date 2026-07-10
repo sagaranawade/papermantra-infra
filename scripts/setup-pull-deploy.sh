@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Install a systemd timer on the VPS that pulls papermantra-infra every 2
-# minutes and runs deploy.sh when main changed.
+# Install pull-deploy on the VPS (every 2 minutes via user crontab).
 #
-# Run once on the VPS as the deploy user (requires passwordless sudo for
-# systemctl enable/start):
+# Does NOT require sudo. When GitHub Actions cannot SSH (port 22 timeout),
+# the VPS still pulls main and runs deploy.sh automatically.
+#
+# Run once on the VPS as deploy:
 #   cd /opt/papermantra-infra
 #   ./scripts/setup-pull-deploy.sh
 # =============================================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEPLOY_USER="$(id -un)"
 DEPLOY_PATH="${ROOT_DIR}"
 SCRIPT="${DEPLOY_PATH}/scripts/pull-and-deploy-if-changed.sh"
+LOG_FILE="${DEPLOY_PATH}/.pull-deploy.log"
 
 if [[ ! -f "${SCRIPT}" ]]; then
   echo "ERROR: ${SCRIPT} not found"
@@ -22,42 +23,16 @@ fi
 
 chmod +x "${SCRIPT}"
 
-SERVICE="/etc/systemd/system/papermantra-pull-deploy.service"
-TIMER="/etc/systemd/system/papermantra-pull-deploy.timer"
+CRON_LINE="*/2 * * * * ${SCRIPT} >> ${LOG_FILE} 2>&1"
 
-sudo tee "${SERVICE}" >/dev/null <<EOF
-[Unit]
-Description=PaperMantra pull-and-deploy when papermantra-infra main changes
-After=network-online.target docker.service
-Wants=network-online.target
+if crontab -l 2>/dev/null | grep -Fq "${SCRIPT}"; then
+  echo ">> pull-deploy crontab already installed"
+else
+  (crontab -l 2>/dev/null | grep -Fv "${SCRIPT}" || true; echo "${CRON_LINE}") | crontab -
+  echo ">> Installed crontab (every 2 minutes):"
+  crontab -l | grep "${SCRIPT}"
+fi
 
-[Service]
-Type=oneshot
-User=${DEPLOY_USER}
-WorkingDirectory=${DEPLOY_PATH}
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=${SCRIPT}
-Nice=10
-EOF
-
-sudo tee "${TIMER}" >/dev/null <<EOF
-[Unit]
-Description=Run PaperMantra pull-deploy every 2 minutes
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=2min
-AccuracySec=30s
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now papermantra-pull-deploy.timer
-
-echo ">> Installed papermantra-pull-deploy.timer"
-systemctl list-timers papermantra-pull-deploy.timer --no-pager || true
 echo ""
+echo ">> Log file: ${LOG_FILE}"
 echo ">> Manual run: ${SCRIPT}"
