@@ -140,11 +140,7 @@ jobs:
 
             chmod +x scripts/*.sh certbot/*.sh
             echo ">> Recording pre-deploy image tags (for rollback)..."
-            TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
-            {
-              echo "# ${TIMESTAMP}"
-              grep '^IMAGE_' .env || true
-            } >> .deploy-history
+            ./scripts/record-deploy-snapshot.sh
 
             DEPLOY_SERVICES="portal,website,api,pdf"
 

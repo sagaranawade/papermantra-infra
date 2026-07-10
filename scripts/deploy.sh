@@ -85,6 +85,11 @@ docker compose pull ${SERVICE_LIST[*]}
 echo ">> Migrating legacy image volumes (one-time safe merge)..."
 "${ROOT_DIR}/scripts/migrate-image-volumes.sh"
 
+if [[ ",${DEPLOY_SERVICES}," == *",api,"* ]]; then
+  echo ">> Ensuring API volume permissions (uid=100)..."
+  "${ROOT_DIR}/scripts/fix-api-volume-permissions.sh"
+fi
+
 echo ">> Starting / updating containers..."
 # shellcheck disable=SC2086
 docker compose up -d --remove-orphans ${SERVICE_LIST[*]}
@@ -96,8 +101,23 @@ wait_for() {
   local url="$2"
   local attempts="${3:-30}"
   local delay="${4:-10}"
+  local container_id=""
+  local last_log_dump=0
 
   for i in $(seq 1 "${attempts}"); do
+    container_id="$(docker compose ps -q "${name}" 2>/dev/null || true)"
+    if [[ -n "${container_id}" ]]; then
+      local state=""
+      state="$(docker inspect -f '{{.State.Status}}' "${container_id}" 2>/dev/null || echo unknown)"
+      if [[ "${state}" == "restarting" || "${state}" == "exited" ]]; then
+        if [[ "${i}" -ge "${last_log_dump}" && $((i - last_log_dump)) -ge 3 ]]; then
+          echo "   ${name} is ${state} — recent logs:"
+          docker compose logs --tail 60 "${name}" 2>&1 || true
+          last_log_dump="${i}"
+        fi
+      fi
+    fi
+
     if docker compose exec -T "${name}" sh -c "wget -qO- '${url}' >/dev/null 2>&1 || curl -fsS '${url}' >/dev/null 2>&1"; then
       echo "   ${name} is healthy (attempt ${i})"
       return 0
@@ -105,7 +125,10 @@ wait_for() {
     echo "   ${name} not ready yet (${i}/${attempts})..."
     sleep "${delay}"
   done
+
   echo "   ERROR: ${name} failed health check"
+  echo "   Last logs for ${name}:"
+  docker compose logs --tail 80 "${name}" 2>&1 || true
   failed=1
   return 1
 }
