@@ -6,8 +6,8 @@
 #   ./scripts/backup-volumes.sh
 #   ./scripts/backup-volumes.sh /opt/backups/papermantra
 #
-# Schedule with cron (daily at 02:00 UTC):
-#   0 2 * * * /opt/papermantra-infra/scripts/backup-volumes.sh >> /var/log/papermantra-backup.log 2>&1
+# Schedule with cron (daily at 02:00 IST — also handled by papermantraservices BackupScheduler):
+#   0 2 * * * TZ=Asia/Kolkata /opt/papermantra-infra/scripts/backup-volumes.sh >> /var/log/papermantra-backup.log 2>&1
 # =============================================================================
 set -euo pipefail
 
