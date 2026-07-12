@@ -120,6 +120,8 @@ services:
       PDF_MONGODB_DATABASE: ${PDF_MONGODB_DATABASE}
       BACKUP_OUTPUT_DIR: /app/backups
       BACKUP_DRIVE_USER_ID: ${BACKUP_DRIVE_USER_ID:-neelsa@gmail.com}
+      BACKUP_DRIVE_FOLDER_NAME: ${BACKUP_DRIVE_FOLDER_NAME:-Papermantra Daily Backup}
+      BACKUP_DRIVE_RETENTION_DAYS: ${BACKUP_DRIVE_RETENTION_DAYS:-7}
     volumes:
       - api_logs:/var/log/papermantra
       - api_user_pics:/app/userPic
@@ -204,6 +206,10 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
+    # Loopback only — never expose 27017 on the public interface.
+    # Enables stable SSH / Cloudflare tunnels: localhost:27017 on the VPS.
+    ports:
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
       - mongo_config:/data/configdb
