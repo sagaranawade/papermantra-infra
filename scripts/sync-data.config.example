@@ -9,6 +9,9 @@ VPS_USER=deploy
 VPS_PATH=/opt/papermantra-infra
 SSH_KEY=C:/Users/Sagar/.ssh/papermantra_deploy_ci
 
+# Cloudflare Access hostname for permanent Mongo (see docs/MONGO-ACCESS.md)
+# MONGO_CF_HOSTNAME=mongo.papermantra.com
+
 # Local MongoDB (native install or Docker publishing 27017)
 LOCAL_MONGO_HOST=host.docker.internal
 LOCAL_MONGO_PORT=27017
