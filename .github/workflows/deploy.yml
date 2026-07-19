@@ -186,6 +186,8 @@ jobs:
 
       - name: Deploy via SSH (attempt 3)
         if: vars.DEPLOY_RUNNER != 'self-hosted' && steps.ssh_deploy_1.outcome == 'failure' && steps.ssh_deploy_2.outcome == 'failure'
+        id: ssh_deploy_3
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.2.0
         env:
           GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
@@ -214,15 +216,22 @@ jobs:
             ./scripts/ci-deploy.sh
 
       - name: SSH deploy failed — pull-deploy fallback note
-        if: vars.DEPLOY_RUNNER != 'self-hosted' && failure() && (steps.ssh_deploy_1.outcome == 'failure')
+        if: >
+          vars.DEPLOY_RUNNER != 'self-hosted' &&
+          steps.ssh_deploy_1.outcome == 'failure' &&
+          (steps.ssh_deploy_2.outcome == 'failure' || steps.ssh_deploy_2.conclusion == 'skipped') &&
+          (steps.ssh_deploy_3.outcome == 'failure' || steps.ssh_deploy_3.conclusion == 'skipped')
         run: |
           echo "::warning::GitHub Actions could not SSH to the VPS (port 22 timeout)."
-          echo "If scripts/setup-pull-deploy.sh is installed on the VPS, main-branch"
-          echo "changes (including .env image pins) will auto-deploy within ~2 minutes."
-          echo "Permanent fix: install the self-hosted runner (scripts/install-github-runner.sh)"
+          echo "Relying on VPS pull-deploy (crontab) to git pull + deploy within ~2 minutes."
+          echo "Waiting 150s for pull-deploy before public smoke tests..."
+          sleep 150
+          echo "Permanent fix: install self-hosted runner (scripts/install-github-runner.sh)"
           echo "and set repo variable DEPLOY_RUNNER=self-hosted."
 
       - name: Smoke tests
+        # Always verify public health — even when SSH timed out (pull-deploy path).
+        if: always() && steps.resolve.conclusion == 'success'
         run: |
           set -euo pipefail
           SERVICES="${{ steps.resolve.outputs.services }}"
@@ -243,7 +252,7 @@ jobs:
               continue
             fi
 
-            attempts=6
+            attempts=8
             sleep_secs=15
             if [[ "${svc}" == "pdf" ]]; then
               attempts=12
@@ -268,4 +277,6 @@ jobs:
         if: failure()
         run: |
           echo "Infra deployment failed for commit ${{ github.sha }}"
+          echo "Common cause: GitHub→VPS SSH timeout (port 22). Prefer self-hosted runner."
+          echo "On VPS: cd ${{ env.DEPLOY_PATH }} && git pull && ./scripts/deploy.sh"
           echo "Check VPS logs: docker compose -f ${{ env.DEPLOY_PATH }}/docker-compose.yml logs --tail=100"
