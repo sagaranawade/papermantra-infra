@@ -123,6 +123,13 @@ services:
       BACKUP_DRIVE_USER_ID: ${BACKUP_DRIVE_USER_ID:-neelsa@gmail.com}
       BACKUP_DRIVE_FOLDER_NAME: ${BACKUP_DRIVE_FOLDER_NAME:-Papermantra Daily Backup}
       BACKUP_DRIVE_RETENTION_DAYS: ${BACKUP_DRIVE_RETENTION_DAYS:-7}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-papermantra-assets}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_KEY_PREFIX: ${R2_KEY_PREFIX:-mobile/}
+      R2_ENABLED: ${R2_ENABLED:-true}
     volumes:
       - api_logs:/var/log/papermantra
       - api_user_pics:/app/userPic
