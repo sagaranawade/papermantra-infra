@@ -62,6 +62,13 @@ for i in $(seq 1 "${ATTEMPTS}"); do
     continue
   fi
 
+  # Old nginx proxies unknown paths to the React SPA — keep waiting for the real endpoint.
+  if [[ "${body}" != \{* ]]; then
+    echo "Attempt ${i}/${ATTEMPTS}: deploy-meta still serving non-JSON (nginx conf not rolled out yet)"
+    sleep "${SLEEP_SECS}"
+    continue
+  fi
+
   ok=1
   for svc in "${SVC_ARRAY[@]}"; do
     svc="$(echo "${svc}" | xargs)"
@@ -71,7 +78,7 @@ for i in $(seq 1 "${ATTEMPTS}"); do
       echo "WARN: no expected tag for ${svc}, skipping"
       continue
     fi
-    running="$(json_running_tag "${body}" "${svc}")"
+    running="$(json_running_tag "${body}" "${svc}" 2>/dev/null || true)"
     if [[ "${running}" != "${expected}" ]]; then
       echo "Attempt ${i}/${ATTEMPTS}: ${svc} running=${running:-?} expected=${expected}"
       ok=0
@@ -88,5 +95,8 @@ for i in $(seq 1 "${ATTEMPTS}"); do
 done
 
 echo "ERROR: deploy-meta did not report expected image tags in time."
-echo "This usually means SSH deploy failed and pull-deploy did not recreate containers."
+echo "This usually means SSH deploy failed and VPS pull-deploy did not recreate containers/nginx."
+echo "One-time on VPS:"
+echo "  cd /opt/papermantra-infra && git pull && ./scripts/setup-pull-deploy.sh && ./scripts/deploy.sh"
+echo "Permanent: RUNNER_TOKEN=... ./scripts/install-github-runner.sh && set DEPLOY_RUNNER=self-hosted"
 exit 1
