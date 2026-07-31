@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Pull latest papermantra-infra main and deploy when HEAD changed.
+# Pull latest papermantra-infra main and deploy when:
+#   1) git HEAD changed, OR
+#   2) running container image tags do not match .env pins
 #
-# Used by systemd timer on the VPS so deploys succeed even when GitHub Actions
+# Used by crontab on the VPS so deploys succeed even when GitHub Actions
 # cannot SSH in (provider firewall / transient timeouts on port 22).
 #
 # Usage:
@@ -27,17 +29,18 @@ git fetch origin main
 
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse origin/main)"
+HEAD_CHANGED=0
 
-if [[ "${LOCAL}" == "${REMOTE}" ]]; then
-  echo ">> pull-deploy: already at ${LOCAL:0:7} (no changes)"
-  exit 0
+if [[ "${LOCAL}" != "${REMOTE}" ]]; then
+  HEAD_CHANGED=1
+  echo ">> pull-deploy: ${LOCAL:0:7} -> ${REMOTE:0:7}"
+  git reset --hard origin/main
+else
+  echo ">> pull-deploy: already at ${LOCAL:0:7}"
 fi
 
-echo ">> pull-deploy: ${LOCAL:0:7} -> ${REMOTE:0:7}"
-git reset --hard origin/main
-
 if [[ ! -f .env ]]; then
-  echo "ERROR: .env missing after git reset"
+  echo "ERROR: .env missing after git sync"
   exit 1
 fi
 
@@ -48,7 +51,41 @@ if [[ -f .deploy-lock ]]; then
   exit 0
 fi
 
-export DEPLOY_SERVICES="${DEPLOY_SERVICES:-portal,website,api,pdf}"
-./scripts/deploy.sh --rollback-on-failure
+# Login so docker manifest / pull works for private GHCR packages.
+if [[ -n "${GHCR_PAT:-${GHCR_TOKEN:-}}" ]]; then
+  echo "${GHCR_PAT:-${GHCR_TOKEN}}" | docker login ghcr.io -u "${GHCR_USER:-sagaranawade}" --password-stdin >/dev/null
+elif [[ -f "${HOME}/.docker/config.json" ]]; then
+  :
+else
+  echo "WARN: no GHCR credentials in env; pull may fail for private images"
+fi
 
+export DEPLOY_SERVICES="${DEPLOY_SERVICES:-portal,website,api,pdf}"
+
+NEED_DEPLOY="${HEAD_CHANGED}"
+if ! DEPLOY_SERVICES="${DEPLOY_SERVICES}" ./scripts/images-match-env.sh >/tmp/pm-image-match.txt 2>&1; then
+  echo ">> pull-deploy: running images do not match .env pins — redeploying"
+  cat /tmp/pm-image-match.txt || true
+  NEED_DEPLOY=1
+else
+  cat /tmp/pm-image-match.txt || true
+fi
+
+if [[ "${NEED_DEPLOY}" -ne 1 ]]; then
+  echo ">> pull-deploy: nothing to do"
+  # Keep public meta fresh even when no recreate was needed.
+  ./scripts/write-deploy-meta.sh || true
+  exit 0
+fi
+
+# When only tags drifted (HEAD unchanged), still deploy the mismatched services.
+if [[ "${HEAD_CHANGED}" -eq 1 ]]; then
+  DETECTED="$(./scripts/resolve-deploy-services.sh || true)"
+  if [[ -n "${DETECTED}" ]]; then
+    export DEPLOY_SERVICES="${DETECTED}"
+    echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
+  fi
+fi
+
+./scripts/deploy.sh --rollback-on-failure
 echo ">> pull-deploy complete."

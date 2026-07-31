@@ -6,13 +6,14 @@
 # With a self-hosted runner, deploy jobs run ON the VPS — no inbound SSH from
 # GitHub required.
 #
-# One-time setup:
+# RECOMMENDED permanent fix for GitHub→VPS SSH timeouts:
 #   1. GitHub → papermantra-infra → Settings → Actions → Runners → New runner
 #   2. Copy the registration token (expires in 1 hour)
 #   3. On VPS:
 #        cd /opt/papermantra-infra
 #        RUNNER_TOKEN=<token> ./scripts/install-github-runner.sh
 #   4. In GitHub repo Settings → Variables, set DEPLOY_RUNNER=self-hosted
+#   5. Keep pull-deploy crontab as backup: ./scripts/setup-pull-deploy.sh
 #
 # Usage:
 #   RUNNER_TOKEN=XXXX ./scripts/install-github-runner.sh

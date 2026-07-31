@@ -1,0 +1,23 @@
+{
+  "updatedAt": null,
+  "gitHead": null,
+  "expected": {
+    "portal": null,
+    "website": null,
+    "api": null,
+    "pdf": null
+  },
+  "running": {
+    "portal": null,
+    "website": null,
+    "api": null,
+    "pdf": null
+  },
+  "images": {
+    "portal": null,
+    "website": null,
+    "api": null,
+    "pdf": null
+  },
+  "note": "Placeholder until the next successful VPS deploy writes live tags."
+}

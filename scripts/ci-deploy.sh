@@ -46,27 +46,33 @@ chmod +x scripts/*.sh certbot/*.sh 2>/dev/null || true
 echo ">> Recording pre-deploy image tags (for rollback)..."
 ./scripts/record-deploy-snapshot.sh
 
-DEPLOY_SERVICES="portal,website,api,pdf"
-
-if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
-  if [[ "${EVENT_NAME}" == "push" ]]; then
-    DETECTED="$(./scripts/resolve-deploy-services.sh)"
-    if [[ -n "${DETECTED}" ]]; then
-      DEPLOY_SERVICES="${DETECTED}"
-      echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
+# Prefer an explicit list from the workflow; otherwise resolve from git/.env.
+if [[ -n "${DEPLOY_SERVICES:-}" ]]; then
+  echo ">> Using DEPLOY_SERVICES from environment: ${DEPLOY_SERVICES}"
+else
+  DEPLOY_SERVICES="portal,website,api,pdf"
+  if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
+    if [[ "${EVENT_NAME}" == "push" ]]; then
+      DETECTED="$(./scripts/resolve-deploy-services.sh)"
+      if [[ -n "${DETECTED}" ]]; then
+        DEPLOY_SERVICES="${DETECTED}"
+        echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
+      fi
+    elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+      DEPLOY_SERVICES="${DEPLOY_SERVICE_INPUT}"
+      echo ">> Manual deploy limited to: ${DEPLOY_SERVICES}"
     fi
-  elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
-    DEPLOY_SERVICES="${DEPLOY_SERVICE_INPUT}"
-    echo ">> Manual deploy limited to: ${DEPLOY_SERVICES}"
   fi
 fi
 
+# Pins are committed on GitHub by the infra workflow `pin` job. Prefer .env from
+# origin/main. Only apply a local pin as a fallback (workflow_dispatch / legacy).
 if [[ -n "${PIN_TAG}" ]]; then
   if [[ "${PIN_ALL}" == "true" ]]; then
     echo "Unified release: pinning all IMAGE_* to ${PIN_TAG}"
     ./scripts/pin-image-tag.sh "${PIN_TAG}" --all
   elif [[ "${SOURCE}" != "manual" ]]; then
-    echo "Per-service release: pinning ${SOURCE} to ${PIN_TAG}"
+    echo "Per-service release (local fallback pin): ${SOURCE} -> ${PIN_TAG}"
     ./scripts/pin-image-tag.sh "${PIN_TAG}" --source "${SOURCE}"
     case "${SOURCE}" in
       papermantra) DEPLOY_SERVICES="portal" ;;

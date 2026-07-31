@@ -55,7 +55,8 @@ service_image_var() {
 
 wait_for_image() {
   local image="$1"
-  local attempts="${2:-36}"
+  # Keep this short — a missing/unauthorized image should fail the deploy, not hang SSH for 6 minutes.
+  local attempts="${2:-18}"
   local delay="${3:-10}"
   echo "   waiting for ${image}..."
   for i in $(seq 1 "${attempts}"); do
@@ -65,6 +66,7 @@ wait_for_image() {
     fi
     if [[ "${i}" -eq "${attempts}" ]]; then
       echo "   ERROR: ${image} not found in registry after $((attempts * delay))s"
+      echo "   Tip: ensure GHCR login on the VPS (GHCR_PAT) and that the tag was pushed."
       return 1
     fi
     sleep "${delay}"
@@ -93,6 +95,10 @@ fi
 echo ">> Starting / updating containers..."
 # shellcheck disable=SC2086
 docker compose up -d --remove-orphans ${SERVICE_LIST[*]}
+
+# Ensure nginx has the deploy-meta volume + latest conf (needed for CI tag checks).
+echo ">> Ensuring nginx is up with deploy-meta mount..."
+docker compose up -d nginx
 
 echo ">> Waiting for core health checks..."
 failed=0
@@ -159,8 +165,19 @@ if [[ "${failed}" -eq 1 ]]; then
   exit 1
 fi
 
+echo ">> Writing public deploy-meta (image tags for CI smoke)..."
+chmod +x "${ROOT_DIR}/scripts/write-deploy-meta.sh" 2>/dev/null || true
+"${ROOT_DIR}/scripts/write-deploy-meta.sh"
+
 echo ">> Reloading nginx..."
 docker compose exec -T nginx nginx -s reload 2>/dev/null || docker compose restart nginx
+
+echo ">> Verifying running containers match .env pins..."
+chmod +x "${ROOT_DIR}/scripts/images-match-env.sh" 2>/dev/null || true
+if ! DEPLOY_SERVICES="${DEPLOY_SERVICES}" "${ROOT_DIR}/scripts/images-match-env.sh"; then
+  echo "ERROR: running image tags do not match .env after deploy."
+  failed=1
+fi
 
 echo ">> Pruning dangling images..."
 docker image prune -f
@@ -168,6 +185,15 @@ docker image prune -f
 if [[ "${DEPLOY_SERVICES}" == "portal,website,api,pdf" ]]; then
   echo ">> Verifying MongoDB, Redis, and shared images..."
   "${ROOT_DIR}/scripts/verify-datastores.sh"
+fi
+
+if [[ "${failed}" -eq 1 ]]; then
+  echo ">> Deployment verification failed."
+  if [[ "${ROLLBACK_ON_FAILURE}" -eq 1 ]]; then
+    echo ">> Rolling back..."
+    "${ROOT_DIR}/scripts/rollback.sh"
+  fi
+  exit 1
 fi
 
 echo ">> Deployment complete."

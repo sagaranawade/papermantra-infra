@@ -1,17 +1,19 @@
 # =============================================================================
 # Deploy papermantra-infra to the production VPS.
 #
-# Triggered by:
-#   • push to main (infra config changes)
-#   • workflow_dispatch (manual redeploy)
-#   • repository_dispatch from app repos (optional image tag bump)
+# Why deploys used to "succeed" while prod stayed old:
+#   1) GitHub-hosted runners often cannot SSH to the VPS (port 22 timeout)
+#   2) Pins were applied only on the VPS, then wiped by the next git reset
+#   3) Smoke tests only hit /healthz (old containers still healthy)
 #
-# Required GitHub Secrets:
-#   PROD_SSH_HOST, PROD_SSH_USER, PROD_SSH_KEY
-#   GHCR_TOKEN (read packages — PAT or fine-grained token)
+# Permanent model:
+#   A) pin job commits IMAGE_* tags to .env on GitHub (source of truth)
+#   B) deploy job / VPS pull-deploy recreates containers from that .env
+#   C) smoke tests require /deploy-meta.json running tags == expected pins
+#   D) optional: set DEPLOY_RUNNER=self-hosted after install-github-runner.sh
 #
-# Optional repository variables:
-#   INFRA_DEPLOY_PATH  default: /opt/papermantra-infra
+# Required secrets: GHCR_TOKEN
+# SSH path also needs: PROD_SSH_HOST, PROD_SSH_USER, PROD_SSH_KEY
 # =============================================================================
 
 name: Deploy Infrastructure
@@ -26,6 +28,7 @@ on:
       - 'certbot/**'
       - 'scripts/**'
       - 'monitoring/**'
+      - 'deploy-meta/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -53,67 +56,143 @@ env:
   DEPLOY_PATH: ${{ vars.INFRA_DEPLOY_PATH || '/opt/papermantra-infra' }}
 
 jobs:
+  # ── Commit IMAGE_* pins to GitHub (.env is source of truth) ───────────────
+  pin:
+    name: Pin image tags on GitHub
+    if: |
+      (github.event_name == 'repository_dispatch' && github.event.client_payload.pin_tag != '') ||
+      (github.event_name == 'workflow_dispatch' && inputs.image_tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      services: ${{ steps.pin.outputs.services }}
+      pin_tag: ${{ steps.pin.outputs.pin_tag }}
+      changed: ${{ steps.pin.outputs.changed }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pin .env and push
+        id: pin
+        env:
+          PIN_TAG: ${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || '' }}
+          PIN_ALL: ${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}
+          SOURCE: ${{ github.event.client_payload.source || 'manual' }}
+          DEPLOY_SERVICE_INPUT: ${{ github.event.inputs.deploy_service || 'all' }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+
+          SERVICES="portal,website,api,pdf"
+          if [[ "${PIN_ALL}" == "true" ]]; then
+            SERVICES="portal,website,api,pdf"
+          elif [[ "${SOURCE}" != "manual" ]]; then
+            case "${SOURCE}" in
+              papermantra) SERVICES="portal" ;;
+              robofume) SERVICES="website" ;;
+              papermantraservices) SERVICES="api" ;;
+              pdfgenerator) SERVICES="pdf" ;;
+            esac
+          elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+            SERVICES="${DEPLOY_SERVICE_INPUT}"
+          fi
+
+          echo "services=${SERVICES}" >> "$GITHUB_OUTPUT"
+          echo "pin_tag=${PIN_TAG}" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          changed=false
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+
+            if [[ "${PIN_ALL}" == "true" ]]; then
+              ./scripts/pin-image-tag.sh "${PIN_TAG}" --all
+            elif [[ "${SOURCE}" != "manual" ]]; then
+              ./scripts/pin-image-tag.sh "${PIN_TAG}" --source "${SOURCE}"
+            elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+              ./scripts/pin-image-tag.sh "${PIN_TAG}" --service "${DEPLOY_SERVICE_INPUT}"
+            else
+              echo "ERROR: provide pin_all=true or a concrete deploy_service (portal|website|api|pdf)"
+              exit 1
+            fi
+
+            if git diff --quiet -- .env; then
+              echo "already pinned"
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            git add .env
+            git commit -m "Pin ${SERVICES} image(s) to ${PIN_TAG}."
+            if git push origin HEAD:main; then
+              changed=true
+              break
+            fi
+            echo "push raced (attempt ${attempt}); retrying..."
+            sleep $((attempt * 2))
+          done
+
+          if [[ "${changed}" != "true" ]]; then
+            echo "ERROR: could not push pin after retries"
+            exit 1
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  # ── Recreate containers on the VPS ────────────────────────────────────────
   deploy:
     name: Deploy to VPS
-    # Set repo variable DEPLOY_RUNNER=self-hosted after installing the runner
-    # (scripts/install-github-runner.sh) to avoid GitHub→VPS SSH timeouts permanently.
+    # repository_dispatch only pins; the resulting push runs this job.
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.image_tag == '')
     runs-on: ${{ vars.DEPLOY_RUNNER == 'self-hosted' && fromJson('["self-hosted", "papermantra-prod"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     environment:
       name: production
       url: https://papermantra.com
+    outputs:
+      services: ${{ steps.resolve.outputs.services }}
 
     env:
-      CI_PIN_TAG: ${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}
-      CI_PIN_ALL: ${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}
-      CI_SOURCE: ${{ github.event.client_payload.source || 'manual' }}
+      CI_PIN_TAG: ''
+      CI_PIN_ALL: 'false'
+      CI_SOURCE: 'manual'
       CI_EVENT_NAME: ${{ github.event_name }}
       CI_DEPLOY_SERVICE: ${{ github.event.inputs.deploy_service || 'all' }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Resolve deploy services
         id: resolve
         run: |
           set -euo pipefail
-          SOURCE="${{ github.event.client_payload.source || 'manual' }}"
-          PIN_TAG="${{ github.event.inputs.image_tag || github.event.client_payload.pin_tag || github.event.client_payload.version || '' }}"
-          PIN_ALL="${{ github.event.inputs.pin_all || github.event.client_payload.pin_all || 'false' }}"
           EVENT_NAME="${{ github.event_name }}"
           DEPLOY_SERVICE_INPUT="${{ github.event.inputs.deploy_service || 'all' }}"
-
           SERVICES="portal,website,api,pdf"
 
-          if [[ "${SOURCE}" == "manual" && -z "${PIN_TAG}" ]]; then
-            if [[ "${EVENT_NAME}" == "push" ]]; then
-              DETECTED="$(bash ./scripts/resolve-deploy-services.sh)"
-              if [[ -n "${DETECTED}" ]]; then
-                SERVICES="${DETECTED}"
-              fi
-            elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
-              SERVICES="${DEPLOY_SERVICE_INPUT}"
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            DETECTED="$(bash ./scripts/resolve-deploy-services.sh || true)"
+            if [[ -n "${DETECTED}" ]]; then
+              SERVICES="${DETECTED}"
             fi
-          elif [[ -n "${PIN_TAG}" ]]; then
-            if [[ "${PIN_ALL}" == "true" ]]; then
-              SERVICES="portal,website,api,pdf"
-            elif [[ "${SOURCE}" != "manual" ]]; then
-              case "${SOURCE}" in
-                papermantra) SERVICES="portal" ;;
-                robofume) SERVICES="website" ;;
-                papermantraservices) SERVICES="api" ;;
-                pdfgenerator) SERVICES="pdf" ;;
-              esac
-            elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
-              SERVICES="${DEPLOY_SERVICE_INPUT}"
-            fi
+          elif [[ "${DEPLOY_SERVICE_INPUT}" != "all" && -n "${DEPLOY_SERVICE_INPUT}" ]]; then
+            SERVICES="${DEPLOY_SERVICE_INPUT}"
           fi
 
           echo "services=${SERVICES}" >> "${GITHUB_OUTPUT}"
-          echo "Smoke tests will target: ${SERVICES}"
+          echo "Deploy services: ${SERVICES}"
 
       - name: Deploy on VPS (self-hosted runner)
+        id: self_hosted_deploy
         if: vars.DEPLOY_RUNNER == 'self-hosted'
         env:
           DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
@@ -146,11 +225,13 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             chmod +x scripts/*.sh certbot/*.sh
-            export CI_PIN_TAG="${CI_PIN_TAG}"
-            export CI_PIN_ALL="${CI_PIN_ALL}"
-            export CI_SOURCE="${CI_SOURCE}"
-            export CI_EVENT_NAME="${CI_EVENT_NAME}"
-            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
+            export CI_PIN_TAG=""
+            export CI_PIN_ALL="false"
+            export CI_SOURCE="manual"
+            export CI_EVENT_NAME="push"
+            export CI_DEPLOY_SERVICE="all"
+            export DEPLOY_SERVICES="${{ steps.resolve.outputs.services }}"
+            # Prefer explicit service list from the workflow resolve step.
             ./scripts/ci-deploy.sh
 
       - name: Deploy via SSH (attempt 2)
@@ -177,60 +258,30 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             chmod +x scripts/*.sh certbot/*.sh
-            export CI_PIN_TAG="${CI_PIN_TAG}"
-            export CI_PIN_ALL="${CI_PIN_ALL}"
-            export CI_SOURCE="${CI_SOURCE}"
-            export CI_EVENT_NAME="${CI_EVENT_NAME}"
-            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
+            export CI_PIN_TAG=""
+            export CI_PIN_ALL="false"
+            export CI_SOURCE="manual"
+            export CI_EVENT_NAME="push"
+            export CI_DEPLOY_SERVICE="all"
+            export DEPLOY_SERVICES="${{ steps.resolve.outputs.services }}"
             ./scripts/ci-deploy.sh
 
-      - name: Deploy via SSH (attempt 3)
-        if: vars.DEPLOY_RUNNER != 'self-hosted' && steps.ssh_deploy_1.outcome == 'failure' && steps.ssh_deploy_2.outcome == 'failure'
-        id: ssh_deploy_3
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          GHCR_PAT: ${{ secrets.GHCR_TOKEN }}
-          GHCR_USER: ${{ github.repository_owner }}
-        with:
-          host: ${{ secrets.PROD_SSH_HOST }}
-          username: ${{ secrets.PROD_SSH_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          port: 22
-          timeout: 120s
-          command_timeout: 30m
-          envs: GHCR_PAT,GHCR_USER,CI_PIN_TAG,CI_PIN_ALL,CI_SOURCE,CI_EVENT_NAME,CI_DEPLOY_SERVICE
-          script: |
-            sleep 90
-            set -euo pipefail
-            export DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
-            cd "${DEPLOY_PATH}"
-            git fetch origin main
-            git reset --hard origin/main
-            chmod +x scripts/*.sh certbot/*.sh
-            export CI_PIN_TAG="${CI_PIN_TAG}"
-            export CI_PIN_ALL="${CI_PIN_ALL}"
-            export CI_SOURCE="${CI_SOURCE}"
-            export CI_EVENT_NAME="${CI_EVENT_NAME}"
-            export CI_DEPLOY_SERVICE="${CI_DEPLOY_SERVICE}"
-            ./scripts/ci-deploy.sh
-
-      - name: SSH deploy failed — pull-deploy fallback note
+      - name: SSH deploy failed — wait for VPS pull-deploy
+        id: ssh_fallback
         if: >
           vars.DEPLOY_RUNNER != 'self-hosted' &&
           steps.ssh_deploy_1.outcome == 'failure' &&
-          (steps.ssh_deploy_2.outcome == 'failure' || steps.ssh_deploy_2.conclusion == 'skipped') &&
-          (steps.ssh_deploy_3.outcome == 'failure' || steps.ssh_deploy_3.conclusion == 'skipped')
+          (steps.ssh_deploy_2.outcome == 'failure' || steps.ssh_deploy_2.conclusion == 'skipped')
         run: |
           echo "::warning::GitHub Actions could not SSH to the VPS (port 22 timeout)."
-          echo "Relying on VPS pull-deploy (crontab) to git pull + deploy within ~2 minutes."
-          echo "Waiting 150s for pull-deploy before public smoke tests..."
-          sleep 150
-          echo "Permanent fix: install self-hosted runner (scripts/install-github-runner.sh)"
-          echo "and set repo variable DEPLOY_RUNNER=self-hosted."
+          echo "Relying on VPS pull-deploy crontab (images-match-env + git pull) to recreate containers."
+          echo "Waiting 180s for pull-deploy before tag verification..."
+          sleep 180
+          echo "Permanent fix for SSH: install self-hosted runner (scripts/install-github-runner.sh)"
+          echo "then set repo variable DEPLOY_RUNNER=self-hosted."
 
-      - name: Smoke tests
-        # Always verify public health — even when SSH timed out (pull-deploy path).
+      - name: Health smoke tests
+        id: health
         if: always() && steps.resolve.conclusion == 'success'
         run: |
           set -euo pipefail
@@ -248,17 +299,13 @@ jobs:
             svc="$(echo "${svc}" | xargs)"
             url="${URLS[$svc]:-}"
             if [[ -z "${url}" ]]; then
-              echo "Skipping unknown service: ${svc}"
               continue
             fi
-
             attempts=8
             sleep_secs=15
             if [[ "${svc}" == "pdf" ]]; then
               attempts=12
-              sleep_secs=15
             fi
-
             echo "Checking ${svc} (${url})..."
             for i in $(seq 1 "${attempts}"); do
               if curl -fsS "${url}" >/dev/null; then
@@ -273,10 +320,22 @@ jobs:
             done
           done
 
-      - name: Notify on failure
+      - name: Verify running image tags (deploy-meta)
+        if: always() && steps.resolve.conclusion == 'success' && steps.health.conclusion == 'success'
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify-public-deploy-meta.sh
+          SERVICES="${{ steps.resolve.outputs.services }}" \
+            ATTEMPTS=16 SLEEP_SECS=15 \
+            ./scripts/verify-public-deploy-meta.sh
+
+      - name: Fail if deploy could not be verified
         if: failure()
         run: |
           echo "Infra deployment failed for commit ${{ github.sha }}"
-          echo "Common cause: GitHub→VPS SSH timeout (port 22). Prefer self-hosted runner."
-          echo "On VPS: cd ${{ env.DEPLOY_PATH }} && git pull && ./scripts/deploy.sh"
-          echo "Check VPS logs: docker compose -f ${{ env.DEPLOY_PATH }}/docker-compose.yml logs --tail=100"
+          echo "Common causes:"
+          echo "  - GitHub→VPS SSH timeout (port 22) and pull-deploy did not recreate images"
+          echo "  - /deploy-meta.json missing or tags still on the previous release"
+          echo "Fix: install self-hosted runner (scripts/install-github-runner.sh) and set DEPLOY_RUNNER=self-hosted"
+          echo "Manual: cd ${{ env.DEPLOY_PATH }} && git pull && DEPLOY_SERVICES=${{ steps.resolve.outputs.services }} ./scripts/deploy.sh"
+          exit 1
