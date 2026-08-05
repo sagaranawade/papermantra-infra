@@ -59,9 +59,22 @@ wait_for_image() {
   local attempts="${2:-18}"
   local delay="${3:-10}"
   echo "   waiting for ${image}..."
+
+  # Already pulled locally (common when GHCR tag was later removed / private
+  # manifest inspect fails but the node still has the image).
+  if docker image inspect "${image}" >/dev/null 2>&1; then
+    echo "   ${image} already present locally — skipping registry wait"
+    return 0
+  fi
+
   for i in $(seq 1 "${attempts}"); do
     if docker manifest inspect "${image}" >/dev/null 2>&1; then
       echo "   ${image} is available (attempt ${i})"
+      return 0
+    fi
+    # Race: pull may have completed while we waited.
+    if docker image inspect "${image}" >/dev/null 2>&1; then
+      echo "   ${image} became available locally (attempt ${i})"
       return 0
     fi
     if [[ "${i}" -eq "${attempts}" ]]; then

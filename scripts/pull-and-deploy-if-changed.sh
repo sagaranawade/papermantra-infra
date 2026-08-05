@@ -78,12 +78,21 @@ if [[ "${NEED_DEPLOY}" -ne 1 ]]; then
   exit 0
 fi
 
-# When only tags drifted (HEAD unchanged), still deploy the mismatched services.
+# Prefer only the services that are actually wrong / changed.
+# - On git HEAD change: use .env IMAGE_* diff when available
+# - On tag drift with unchanged HEAD: deploy only mismatched containers
+#   (avoids re-pulling website/robofume when only portal is behind)
 if [[ "${HEAD_CHANGED}" -eq 1 ]]; then
   DETECTED="$(./scripts/resolve-deploy-services.sh || true)"
   if [[ -n "${DETECTED}" ]]; then
     export DEPLOY_SERVICES="${DETECTED}"
     echo ">> Auto-detected changed services from .env diff: ${DEPLOY_SERVICES}"
+  fi
+else
+  MISMATCHED="$(./scripts/mismatched-services.sh || true)"
+  if [[ -n "${MISMATCHED}" ]]; then
+    export DEPLOY_SERVICES="${MISMATCHED}"
+    echo ">> Redeploying only mismatched services: ${DEPLOY_SERVICES}"
   fi
 fi
 
