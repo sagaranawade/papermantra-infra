@@ -40,7 +40,12 @@ function Read-Config([string] $path) {
         if (-not $line -or $line.StartsWith("#")) { return }
         $idx = $line.IndexOf("=")
         if ($idx -lt 1) { return }
-        $map[$line.Substring(0, $idx).Trim()] = $line.Substring($idx + 1).Trim()
+        $val = $line.Substring($idx + 1).Trim()
+        # Allow SSH_KEY="C:/..." style values from bash-style config.
+        if (($val.StartsWith('"') -and $val.EndsWith('"')) -or ($val.StartsWith("'") -and $val.EndsWith("'"))) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        $map[$line.Substring(0, $idx).Trim()] = $val
     }
     return $map
 }
