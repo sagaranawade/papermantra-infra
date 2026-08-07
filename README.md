@@ -170,6 +170,26 @@ If a deployment fails health checks (with `--rollback-on-failure`) or you need t
 
 The script restores the previous `IMAGE_*` tags recorded in `.deploy-history`.
 
+### Pull production MongoDB → local (Windows)
+
+One-shot automation: dump `papermantra` + `pdfgenerator` on the VPS, download, restore into local `mongod`.
+
+```powershell
+# Start local Mongo first (Admin): Start-Service MongoDB
+cd papermantra-infra
+.\scripts\sync-data-from-prod.ps1
+```
+
+Options:
+
+```powershell
+.\scripts\sync-data-from-prod.ps1 -DumpOnly
+.\scripts\sync-data-from-prod.ps1 -RestoreOnly -StagingDir ".\backups\from-prod-..."
+.\scripts\sync-data-from-prod.ps1 -SkipDrop
+```
+
+Uses `scripts/sync-data.config` (SSH + DB names) and VPS `.env` Mongo credentials. Archives land under `backups/from-prod-*` (gitignored).
+
 ### Backups
 
 ```bash
