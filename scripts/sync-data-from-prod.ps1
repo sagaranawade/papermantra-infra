@@ -143,51 +143,40 @@ if (-not $RestoreOnly) {
     }
 
     # Upload + run a remote bash script (reliable exit codes on Windows OpenSSH).
+    # IMPORTANT: must be LF-only; CRLF makes bash fail with: set: pipefail: invalid option name
     $remoteScriptName = "dump-from-prod-remote.sh"
     $localRemoteScript = Join-Path $env:TEMP $remoteScriptName
     $remoteScriptOnVps = "$remoteStaging/$remoteScriptName"
 
-    $remoteScript = @"
-set -euo pipefail
-cd '$vpsPath'
-set -a
-source .env
-set +a
-mkdir -p '$remoteStaging'
-dump_one() {
-  local db="`$1"
-  local out="`$2"
-  echo ">> mongodump db=`$db -> `$out"
-  rm -f "`$out"
-  if ! docker compose exec -T mongodb mongodump \
-      --username="`$MONGO_ROOT_USER" \
-      --password="`$MONGO_ROOT_PASSWORD" \
-      --authenticationDatabase=admin \
-      --db="`$db" \
-      --archive \
-      --gzip \
-      --numParallelCollections=4 \
-      > "`$out"
-  then
-    echo "ERROR: mongodump failed for db=`$db" >&2
-    ls -la '$remoteStaging' >&2 || true
-    exit 1
-  fi
-  if [[ ! -s "`$out" ]]; then
-    echo "ERROR: dump archive missing or empty: `$out" >&2
-    exit 1
-  fi
-  ls -lh "`$out"
-}
-PM_DB="`${MONGODB_DATABASE:-papermantra}"
-PDF_DB="`${PDF_MONGODB_DATABASE:-pdfgenerator}"
-dump_one "`$PM_DB" '$remoteStaging/papermantra.archive.gz'
-dump_one "`$PDF_DB" '$remoteStaging/pdfgenerator.archive.gz'
-echo ">> Remote dumps OK"
-ls -lh '$remoteStaging'
-"@
+    $remoteLines = @(
+        'set -euo pipefail'
+        "cd '$vpsPath'"
+        'set -a'
+        'source .env'
+        'set +a'
+        "mkdir -p '$remoteStaging'"
+        'dump_one() {'
+        '  db="$1"'
+        '  out="$2"'
+        '  echo ">> mongodump db=$db -> $out"'
+        '  rm -f "$out"'
+        '  docker compose exec -T mongodb mongodump --username="$MONGO_ROOT_USER" --password="$MONGO_ROOT_PASSWORD" --authenticationDatabase=admin --db="$db" --archive --gzip --numParallelCollections=4 > "$out"'
+        '  if [[ ! -s "$out" ]]; then'
+        '    echo "ERROR: dump archive missing or empty: $out" >&2'
+        '    exit 1'
+        '  fi'
+        '  ls -lh "$out"'
+        '}'
+        'PM_DB="${MONGODB_DATABASE:-papermantra}"'
+        'PDF_DB="${PDF_MONGODB_DATABASE:-pdfgenerator}"'
+        "dump_one `"`$PM_DB`" '$remoteStaging/papermantra.archive.gz'"
+        "dump_one `"`$PDF_DB`" '$remoteStaging/pdfgenerator.archive.gz'"
+        'echo ">> Remote dumps OK"'
+        "ls -lh '$remoteStaging'"
+    )
+    # Join with LF only (never CRLF) so Linux bash accepts the script.
+    $remoteScript = ($remoteLines -join "`n") + "`n"
 
-    # Expand only our PowerShell vars; keep bash $vars escaped above with `.
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($localRemoteScript, $remoteScript, $utf8NoBom)
 
@@ -200,7 +189,7 @@ ls -lh '$remoteStaging'
     if ($LASTEXITCODE -ne 0) { throw "Failed to upload remote dump script" }
 
     Write-Host ">> Dumping on VPS (mongodump inside papermantra-mongodb) ..." -ForegroundColor Cyan
-    ssh @sshArgs $remote "bash '$remoteScriptOnVps'"
+    ssh @sshArgs $remote "sed -i 's/\r$//' '$remoteScriptOnVps' && bash '$remoteScriptOnVps'"
     if ($LASTEXITCODE -ne 0) {
         throw "Remote mongodump failed (exit $LASTEXITCODE). Check VPS docker/mongodb logs."
     }
