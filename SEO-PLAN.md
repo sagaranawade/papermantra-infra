@@ -46,10 +46,14 @@ Goal: rank for education and exam-paper keywords in India and globally.
 - [x] Redirect `/privacy` → `/privacy-policy`
 
 ### PaperMantra (portal) — done in repo
-- [x] `public/index.html` — meta, OG, Twitter, JSON-LD
-- [x] `SeoHead` component on login/signup routes
-- [x] `robots.txt` — allow login/signup, disallow app paths
-- [x] `sitemap.xml` — portal + links to NeelMind marketing pages
+- [x] `public/index.html` — meta, OG, Twitter, JSON-LD graph (Org + WebSite + SoftwareApplication + FAQ)
+- [x] `public/og-image.png` — 1200×630 social preview
+- [x] `SeoHead` component on login/signup + public marketing routes
+- [x] Keyword landing pages: `/ai-question-paper-generator`, `/question-paper-generator-for-schools`, `/jee-neet-question-paper-software`
+- [x] Canonical host: `www.papermantra.com` (apex → www nginx redirect)
+- [x] Canonical home: `/` (`/home` redirects to `/`)
+- [x] `robots.txt` — allow marketing pages, disallow app paths
+- [x] `sitemap.xml` — home + SEO landings + brochure + auth pages
 - [x] `manifest.json` description
 
 ### Deploy after merge
@@ -61,16 +65,28 @@ Goal: rank for education and exam-paper keywords in India and globally.
 
 ---
 
-## Phase 2 — Google Search Console (you must do manually)
+## Phase 2 — Google Search Console (required for rankings)
 
-Do this for **both** domains:
+Without Search Console, Google may never discover or trust the sitemap. Do this for **both** domains:
 
-1. Go to [Google Search Console](https://search.google.com/search-console)
-2. **Add property** → `https://www.neelmind.com`
-3. Verify via file: `https://www.neelmind.com/google8094b326f2607817.html` (already in robofume `public/`)
-4. Submit sitemap: `https://www.neelmind.com/sitemap.xml`
-5. Repeat for `https://www.papermantra.com` (add new verification in GSC → DNS TXT in Cloudflare, or HTML file in `papermantra/public/`)
-6. Submit sitemap: `https://www.papermantra.com/sitemap.xml`
+### www.papermantra.com (critical)
+1. Open [Google Search Console](https://search.google.com/search-console)
+2. **Add property** → URL prefix → `https://www.papermantra.com`
+3. Verify with **DNS TXT** in Cloudflare (recommended) **or** HTML file:
+   - Download `googleXXXX.html` from GSC
+   - Put it in `papermantra/public/` and redeploy portal
+4. **Sitemaps** → submit `https://www.papermantra.com/sitemap.xml`
+5. Use **URL Inspection** on:
+   - `https://www.papermantra.com/`
+   - `https://www.papermantra.com/ai-question-paper-generator`
+   - `https://www.papermantra.com/question-paper-generator-for-schools`
+   - `https://www.papermantra.com/jee-neet-question-paper-software`
+6. Click **Request indexing** for each (once per URL)
+
+### www.neelmind.com
+1. Add property → `https://www.neelmind.com`
+2. Verify via file: `https://www.neelmind.com/google8094b326f2607817.html` (already in robofume `public/`)
+3. Submit sitemap: `https://www.neelmind.com/sitemap.xml`
 
 **Bing Webmaster Tools** (optional): same sitemap URLs.
 
