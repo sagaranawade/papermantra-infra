@@ -191,8 +191,10 @@ services:
       TECTONIC_CACHE_DIR: /app/.cache/tectonic
       XDG_CACHE_HOME: /app/.cache
       XDG_CONFIG_HOME: /app/.config
+      TECTONIC_ONLY_CACHED: "true"
     volumes:
       - pdf_logs:/var/log/pdfgenerator
+      - pdf_tectonic_cache:/app/.cache
       - question_images:/app/images
     depends_on:
       mongodb:
@@ -280,3 +282,4 @@ volumes:
     external: true
     name: papermantra_question_images
   pdf_logs:
+  pdf_tectonic_cache:
