@@ -188,11 +188,10 @@ services:
       PAPERMANTRA_QUESTIONS_IMAGES_LOCAL_DIR: /app/images
       # Tectonic cache — must be writable by appuser (uid 999); do not mount cache under /tmp as root
       HOME: /home/appuser
-      TECTONIC_CACHE_DIR: /app/.cache/tectonic
+      # Capital T — Tectonic's default is $XDG_CACHE_HOME/Tectonic (Linux is case-sensitive).
+      TECTONIC_CACHE_DIR: /app/.cache/Tectonic
       XDG_CACHE_HOME: /app/.cache
       XDG_CONFIG_HOME: /app/.config
-      # Missing TFMs must download (same as historical prod). Do not set true —
-      # that is --only-cached and fails papers. Need airgap? TECTONIC_ALLOW_ONLY_CACHED=true.
       TECTONIC_ONLY_CACHED: "false"
     volumes:
       - pdf_logs:/var/log/pdfgenerator
