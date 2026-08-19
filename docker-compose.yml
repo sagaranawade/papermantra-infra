@@ -188,8 +188,7 @@ services:
       PAPERMANTRA_QUESTIONS_IMAGES_LOCAL_DIR: /app/images
       # Tectonic cache — must be writable by appuser (uid 999); do not mount cache under /tmp as root
       HOME: /home/appuser
-      # Capital T — Tectonic's default is $XDG_CACHE_HOME/Tectonic (Linux is case-sensitive).
-      TECTONIC_CACHE_DIR: /app/.cache/Tectonic
+      TECTONIC_CACHE_DIR: /app/.cache/tectonic
       XDG_CACHE_HOME: /app/.cache
       XDG_CONFIG_HOME: /app/.config
       TECTONIC_ONLY_CACHED: "false"
