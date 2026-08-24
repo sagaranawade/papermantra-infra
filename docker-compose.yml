@@ -217,6 +217,8 @@ services:
     image: mongo:7.0
     container_name: papermantra-mongodb
     restart: unless-stopped
+    # Cap WiredTiger so Mongo does not take ~50% of the 16 GB VPS by default.
+    command: ["--wiredTigerCacheSizeGB", "4"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
@@ -249,8 +251,8 @@ services:
         --save 900 1
         --save 300 10
         --save 60 10000
-        --maxmemory 512mb
-        --maxmemory-policy allkeys-lru
+        --maxmemory 1gb
+        --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     networks:
