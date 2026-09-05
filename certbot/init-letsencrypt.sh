@@ -44,6 +44,9 @@ docker compose up -d nginx
 
 echo ">> Requesting real certificates from Let's Encrypt..."
 for domain in "${domains[@]}"; do
+  if [[ -z "${domain}" ]]; then
+    continue
+  fi
   echo ">> Preparing ${domain}..."
   bash "${SCRIPT_DIR}/cleanup-placeholders.sh" "${domain}"
 

@@ -16,6 +16,8 @@ domains=(
   "${DOMAIN_NEELMIND:-neelmind.com}"
   "${DOMAIN_API:-api.papermantra.com}"
   "${DOMAIN_PDF:-pdf.papermantra.com}"
+  "${DOMAIN_EDISHA:-neet-jee-prep.e-disha.in}"
+  "${DOMAIN_STUDYLAB:-studylab360.com}"
 )
 
 rsa_key_size=4096

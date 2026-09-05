@@ -109,6 +109,10 @@ echo ">> Starting / updating containers..."
 # shellcheck disable=SC2086
 docker compose up -d --remove-orphans ${SERVICE_LIST[*]}
 
+# Partner vhosts need cert files on disk or nginx fails to start and takes down papermantra.com.
+echo ">> Ensuring TLS placeholders exist for all nginx vhosts..."
+bash "${ROOT_DIR}/certbot/create-dummy-certs.sh"
+
 # Ensure nginx has the deploy-meta volume + latest conf (needed for CI tag checks).
 echo ">> Ensuring nginx is up with deploy-meta mount..."
 docker compose up -d nginx
