@@ -3,6 +3,10 @@
 # DNS must already point at this VPS. Cloudflare proxy must be DNS-only (grey).
 # Dummy/self-signed placeholders make the browser show "Not Secure" — run this
 # after DNS is live: ./certbot/issue-partner-certs.sh
+# Usage:
+#   ./certbot/issue-partner-certs.sh           # e-disha + StudyLab
+#   ./certbot/issue-partner-certs.sh edisha    # e-disha only
+#   ./certbot/issue-partner-certs.sh studylab
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +20,12 @@ fi
 
 # shellcheck disable=SC1091
 source .env
+
+TARGET="${1:-all}"
+if [[ "${TARGET}" != "all" && "${TARGET}" != "edisha" && "${TARGET}" != "studylab" ]]; then
+  echo "Usage: $0 [all|edisha|studylab]"
+  exit 1
+fi
 
 rsa_key_size=4096
 email="${CERTBOT_EMAIL}"
@@ -45,8 +55,12 @@ issue() {
       --no-eff-email" certbot
 }
 
-issue "${DOMAIN_EDISHA}" -d "${DOMAIN_EDISHA}"
-issue "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB_WWW}"
+if [[ "${TARGET}" == "all" || "${TARGET}" == "edisha" ]]; then
+  issue "${DOMAIN_EDISHA}" -d "${DOMAIN_EDISHA}"
+fi
+if [[ "${TARGET}" == "all" || "${TARGET}" == "studylab" ]]; then
+  issue "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB_WWW}"
+fi
 
 sudo chown -R "$(whoami):$(whoami)" certbot/conf 2>/dev/null || true
 docker compose exec nginx nginx -s reload

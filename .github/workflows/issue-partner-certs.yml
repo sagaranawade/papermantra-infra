@@ -1,0 +1,59 @@
+# Issue Let's Encrypt certs for partner hosts on the VPS.
+# Run after DNS is a single A record to this VPS (HTTP-01).
+# Required secrets: PROD_SSH_HOST, PROD_SSH_USER, PROD_SSH_KEY (unless DEPLOY_RUNNER=self-hosted)
+
+name: Issue partner TLS certs
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which partner certs to issue'
+        required: true
+        default: 'edisha'
+        type: choice
+        options:
+          - edisha
+          - studylab
+          - all
+
+concurrency:
+  group: issue-partner-certs
+  cancel-in-progress: false
+
+env:
+  DEPLOY_PATH: ${{ vars.INFRA_DEPLOY_PATH || '/opt/papermantra-infra' }}
+
+jobs:
+  issue:
+    name: Issue Let's Encrypt certs
+    runs-on: ${{ vars.DEPLOY_RUNNER == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
+    timeout-minutes: 25
+    steps:
+      - name: Issue on VPS (self-hosted runner)
+        if: vars.DEPLOY_RUNNER == 'self-hosted'
+        run: |
+          set -euo pipefail
+          cd "${{ env.DEPLOY_PATH }}"
+          git fetch origin main
+          git reset --hard origin/main
+          chmod +x certbot/*.sh
+          ./certbot/issue-partner-certs.sh "${{ inputs.target }}"
+
+      - name: Issue via SSH
+        if: vars.DEPLOY_RUNNER != 'self-hosted'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          timeout: 120s
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd "${{ env.DEPLOY_PATH }}"
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x certbot/*.sh
+            ./certbot/issue-partner-certs.sh "${{ inputs.target }}"
