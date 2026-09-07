@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Issue Let's Encrypt certs for partner hosts only (does not renew papermantra.com).
 # DNS must already point at this VPS. Cloudflare proxy must be DNS-only (grey).
+# Dummy/self-signed placeholders make the browser show "Not Secure" — run this
+# after DNS is live: ./certbot/issue-partner-certs.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
