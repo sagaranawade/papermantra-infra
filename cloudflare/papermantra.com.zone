@@ -6,3 +6,4 @@
 www     300 IN CNAME papermantra.com.
 api     300 IN A     187.127.189.114
 pdf     300 IN A     187.127.189.114
+addonsi 300 IN A     187.127.189.114

@@ -22,8 +22,8 @@ fi
 source .env
 
 TARGET="${1:-all}"
-if [[ "${TARGET}" != "all" && "${TARGET}" != "edisha" && "${TARGET}" != "studylab" ]]; then
-  echo "Usage: $0 [all|edisha|studylab]"
+if [[ "${TARGET}" != "all" && "${TARGET}" != "edisha" && "${TARGET}" != "studylab" && "${TARGET}" != "addonsi" ]]; then
+  echo "Usage: $0 [all|edisha|studylab|addonsi]"
   exit 1
 fi
 
@@ -60,6 +60,9 @@ if [[ "${TARGET}" == "all" || "${TARGET}" == "edisha" ]]; then
 fi
 if [[ "${TARGET}" == "all" || "${TARGET}" == "studylab" ]]; then
   issue "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB}" -d "${DOMAIN_STUDYLAB_WWW}"
+fi
+if [[ "${TARGET}" == "all" || "${TARGET}" == "addonsi" ]]; then
+  issue "${DOMAIN_ADDONSI:-addonsi.papermantra.com}" -d "${DOMAIN_ADDONSI:-addonsi.papermantra.com}"
 fi
 
 sudo chown -R "$(whoami):$(whoami)" certbot/conf 2>/dev/null || true

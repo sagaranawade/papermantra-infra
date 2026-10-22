@@ -15,6 +15,7 @@ on:
         options:
           - edisha
           - studylab
+          - addonsi
           - all
 
 concurrency:

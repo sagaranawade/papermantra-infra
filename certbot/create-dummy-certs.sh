@@ -18,6 +18,7 @@ domains=(
   "${DOMAIN_PDF:-pdf.papermantra.com}"
   "${DOMAIN_EDISHA:-neet-jee-prep.e-disha.in}"
   "${DOMAIN_STUDYLAB:-studylab360.com}"
+  "${DOMAIN_ADDONSI:-addonsi.papermantra.com}"
 )
 
 rsa_key_size=4096
