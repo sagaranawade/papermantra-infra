@@ -116,6 +116,9 @@ services:
       OAUTH_ALLOWED_FRONTEND_URLS: ${OAUTH_ALLOWED_FRONTEND_URLS}
       PORTAL_BASE_URL: ${PORTAL_BASE_URL:-https://www.papermantra.com}
       QUESTIONS_IMAGES_DIR: /app/images
+      INGEST_STORAGE_DIR: /data/ingest-files
+      MATHPIX_APP_ID: ${MATHPIX_APP_ID:-}
+      MATHPIX_APP_KEY: ${MATHPIX_APP_KEY:-}
       FILE_UPLOAD_DIR: /app/userPic
       BRANDING_UPLOAD_BASE: /app/user-uploads
       BRANDING_UPLOAD_DIR: /app/user-uploads/branding
@@ -140,6 +143,7 @@ services:
       - api_user_pics:/app/userPic
       - api_user_uploads:/app/user-uploads
       - question_images:/app/images
+      - ingest_files:/data/ingest-files
       - api_backups:/app/backups
     depends_on:
       mongodb:
@@ -280,6 +284,7 @@ volumes:
   api_user_pics:
   api_user_uploads:
   api_backups:
+  ingest_files:
   question_images:
     external: true
     name: papermantra_question_images
