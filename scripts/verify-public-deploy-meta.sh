@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-META_URL="${META_URL:-https://papermantra.com/deploy-meta.json}"
+META_URL="${META_URL:-https://www.papermantra.com/deploy-meta.json}"
 SERVICES="${SERVICES:-portal,api,pdf}"
 ATTEMPTS="${ATTEMPTS:-12}"
 SLEEP_SECS="${SLEEP_SECS:-15}"
@@ -55,7 +55,7 @@ json_running_tag() {
 IFS=',' read -r -a SVC_ARRAY <<< "${SERVICES}"
 
 for i in $(seq 1 "${ATTEMPTS}"); do
-  body="$(curl -fsS "${META_URL}" 2>/dev/null || true)"
+  body="$(curl -fsSL "${META_URL}" 2>/dev/null || true)"
   if [[ -z "${body}" ]]; then
     echo "Attempt ${i}/${ATTEMPTS}: deploy-meta not reachable yet"
     sleep "${SLEEP_SECS}"
