@@ -138,6 +138,11 @@ services:
       R2_ENABLED: ${R2_ENABLED:-false}
       # Expo Push API — optional but recommended for reliable delivery / higher limits
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      CASHFREE_ENV: ${CASHFREE_ENV:-sandbox}
+      CASHFREE_CLIENT_ID: ${CASHFREE_CLIENT_ID:-}
+      CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET:-}
+      CASHFREE_RETURN_URL: ${CASHFREE_RETURN_URL:-https://www.papermantra.com/checkout/return}
+      CASHFREE_NOTIFY_URL: ${CASHFREE_NOTIFY_URL:-https://api.papermantra.com/papermantra/api/v1/public/student-shop/cashfree/webhook}
     volumes:
       - api_logs:/var/log/papermantra
       - api_user_pics:/app/userPic
